@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorldHub — الرسائل</title>
+<link rel="stylesheet" href="main.css">
+<link rel="stylesheet" href="sidebar.css">
+<style>
+  .msg-shell{ display:grid; grid-template-columns: 300px 1fr; height:calc(100vh - 60px - var(--bottom-nav-h) - 32px); border-radius:var(--radius-lg); overflow:hidden; }
+  body[data-page="messages"] .layout{ max-width:820px; }
+  .conv-list{ border-inline-start:1px solid var(--border-soft); overflow:auto; }
+  .conv-search{ padding:14px; border-bottom:1px solid var(--border-soft); position:relative; }
+  .conv-search input{ width:100%; background:var(--bg-input); border:1px solid var(--border); border-radius:99px; padding:9px 14px; font-size:13px; }
+  .conv-search-results{ position:absolute; inset-inline:14px; top:60px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:14px; z-index:5; box-shadow:var(--shadow-pop); overflow:hidden; }
+  .conv-search-result{ display:flex; align-items:center; gap:10px; padding:10px 12px; cursor:pointer; }
+  .conv-search-result:hover{ background:var(--bg-hover); }
+  .conv-item{ display:flex; gap:11px; padding:12px 16px; cursor:pointer; border-bottom:1px solid var(--border-soft); position:relative; }
+  .conv-item:hover{ background:var(--bg-elevated); }
+  .conv-item.active{ background:var(--accent-soft); }
+  .conv-item .dot{ position:absolute; bottom:11px; right:33px; width:10px; height:10px; border-radius:50%; background:var(--green); border:2px solid var(--bg-card); }
+  .conv-name{ font-weight:800; font-size:13.8px; display:flex; justify-content:space-between; }
+  .conv-name time{ font-size:11px; color:var(--text-faint); font-weight:500; }
+  .conv-last{ font-size:12.5px; color:var(--text-faint); margin-top:2px; }
+  .conv-unread{ background:var(--accent); color:#fff; font-size:10.5px; font-weight:800; border-radius:99px; min-width:18px; height:18px; display:flex; align-items:center; justify-content:center; padding:0 5px; margin-inline-start:auto; }
+
+  .chat-pane{ display:flex; flex-direction:column; }
+  .chat-head{ display:flex; align-items:center; gap:12px; padding:14px 20px; border-bottom:1px solid var(--border-soft); }
+  .chat-head .status{ font-size:12px; color:var(--green); }
+  .chat-head .status.typing{ color:var(--accent-2); font-weight:700; }
+  .chat-body{ flex:1; overflow:auto; padding:20px; display:flex; flex-direction:column; gap:12px; }
+  .bubble{ max-width:62%; padding:10px 15px; border-radius:16px; font-size:13.8px; line-height:1.5; }
+  .bubble.in{ background:var(--bg-elevated); align-self:flex-start; border-bottom-left-radius:4px; }
+  .bubble.out{ background:linear-gradient(135deg,var(--accent),#7048e8); color:#fff; align-self:flex-end; border-bottom-right-radius:4px; }
+  .bubble time{ display:flex; align-items:center; gap:4px; font-size:10px; opacity:.7; margin-top:4px; }
+  .typing{ align-self:flex-start; display:flex; gap:4px; padding:10px 15px; background:var(--bg-elevated); border-radius:16px; }
+  .typing span{ width:6px; height:6px; border-radius:50%; background:var(--text-faint); animation:blink 1.2s infinite ease-in-out; }
+  .typing span:nth-child(2){ animation-delay:.2s; } .typing span:nth-child(3){ animation-delay:.4s; }
+  @keyframes blink{ 0%,80%,100%{ opacity:.25 } 40%{ opacity:1 } }
+  .chat-input{ display:flex; gap:10px; padding:16px 20px; border-top:1px solid var(--border-soft); }
+  .chat-input input{ flex:1; background:var(--bg-input); border:1px solid var(--border); border-radius:99px; padding:11px 17px; font-size:13.8px; }
+  .chat-input input:focus{ border-color:var(--accent); }
+  @media (max-width:760px){ .msg-shell{ grid-template-columns:1fr; height:calc(100vh - 60px - var(--bottom-nav-h)); } .conv-list.hide-mobile{display:none;} }
+</style>
+</head>
+<body data-page="messages">
+
+<header class="topbar">
+  <a href="index.html" class="brand"><div class="brand__mark">🌍</div><div class="brand__name">World<span>Hub</span></div></a>
+  <div class="topbar__search"><span id="ic-search"></span><input type="text" placeholder="ابحث..."><span class="kbd">⌘K</span></div>
+  <div class="topbar__actions">
+    <a href="notifications.html" class="icon-btn"><span class="badge">8</span><span id="ic-bell"></span></a>
+    <a href="profile.html"><img class="avatar" width="40" height="40" src="https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=200&auto=format&fit=crop"></a>
+  </div>
+</header>
+
+<div class="layout layout--narrow">
+  <aside class="col-right col-sticky">
+    <nav class="nav">
+      <a href="index.html" class="nav__link" data-page="home">${nav-home}<span>الرئيسية</span></a>
+      <a href="reels.html" class="nav__link" data-page="reels">${nav-reels}<span>الريلز</span></a>
+      <a href="messages.html" class="nav__link" data-page="messages">${nav-messages}<span>الرسائل</span></a>
+      <a href="notifications.html" class="nav__link" data-page="notifications">${nav-bell}<span>الإشعارات</span></a>
+      <a href="worlds.html" class="nav__link" data-page="worlds">${nav-globe}<span>العوالم</span></a>
+      <a href="dashboard.html" class="nav__link" data-page="dashboard">${nav-dashboard}<span>لوحة المعلومات</span></a>
+      <a href="profile.html" class="nav__link" data-page="profile">${nav-user}<span>الملف الشخصي</span></a>
+    </nav>
+  </aside>
+
+  <main class="col-center" style="max-width:1000px;">
+    <div class="card msg-shell" id="msgShell"></div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="supabase.js"></script>
+<script src="auth-guard.js"></script>
+<script src="app.js"></script>
+<script>
+  const iconMap = {'ic-search':'search','ic-bell':'bell','nav-home':'home','nav-reels':'reels','nav-messages':'messages','nav-bell':'bell','nav-globe':'globe','nav-dashboard':'dashboard','nav-user':'user'};
+  document.body.innerHTML = document.body.innerHTML.replace(/\$\{([a-z0-9\-]+)\}/g, (_, key) => WH.ICONS[iconMap[key]] || '');
+
+  if(WH.isLive()){ initLive(); } else { initDemo(); }
+
+  // =========================================================
+  // وضع تجريبي محلي (بدون اتصال بقاعدة بيانات) — كما كان سابقاً
+  // =========================================================
+  function initDemo(){
+    const convs = [
+      { id:'sarah', last:'شكراً على المشاركة! 🙌', time:'الآن', unread:2, online:true,
+        thread:[{from:'them',text:'مرحباً! شفت منشورك عن جافاسكربت، رائع جداً',time:'10:02'},
+                {from:'me',text:'أشكرك كثيراً! سعيد أنه أفادك 🙏',time:'10:05'},
+                {from:'them',text:'شكراً على المشاركة! 🙌',time:'10:07'}] },
+      { id:'alex', last:'هل جربت النموذج الجديد؟', time:'09:14', unread:0, online:true,
+        thread:[{from:'them',text:'هل جربت النموذج الجديد؟',time:'09:14'}] },
+      { id:'john', last:'أرسلت لك تصميم الواجهة', time:'أمس', unread:0, online:false,
+        thread:[{from:'them',text:'أرسلت لك تصميم الواجهة، عطني رأيك',time:'أمس'}] },
+      { id:'lina', last:'أنت: بالتوفيق في الإطلاق!', time:'الإثنين', unread:0, online:false,
+        thread:[{from:'me',text:'بالتوفيق في الإطلاق!',time:'الإثنين'}] },
+    ];
+
+    let active = convs[0].id;
+
+    function renderShell(){
+      const shell = document.getElementById('msgShell');
+      const list = convs.map(c=>{
+        const p = WH.person(c.id);
+        return `<div class="conv-item ${c.id===active?'active':''}" data-id="${c.id}">
+          ${WH.avatarHTML(p,44)} ${c.online?'<span class="dot"></span>':''}
+          <div style="flex:1;min-width:0">
+            <div class="conv-name"><span>${p.name}</span><time>${c.time}</time></div>
+            <div class="conv-last truncate">${c.last}</div>
+          </div>
+          ${c.unread?`<span class="conv-unread">${c.unread}</span>`:''}
+        </div>`;
+      }).join('');
+
+      const conv = convs.find(c=>c.id===active);
+      const p = WH.person(active);
+      const bubbles = conv.thread.map(m=>`<div class="bubble ${m.from==='me'?'out':'in'}">${m.text}<time>${m.time}</time></div>`).join('');
+
+      shell.innerHTML = `
+        <div class="conv-list">
+          <div class="conv-search"><input placeholder="ابحث في المحادثات..."></div>
+          ${list}
+        </div>
+        <div class="chat-pane">
+          <div class="chat-head">${WH.avatarHTML(p,40)}<div><div class="fw-800">${p.name}</div><div class="status">${conv.online?'متصل الآن':'غير متصل'}</div></div></div>
+          <div class="chat-body" id="chatBody">${bubbles}</div>
+          <form class="chat-input" id="chatForm">
+            <input type="text" placeholder="اكتب رسالة..." id="chatInput" required>
+            <button type="submit" class="btn btn-primary btn-sm">إرسال</button>
+          </form>
+        </div>`;
+
+      shell.querySelectorAll('.conv-item').forEach(el=>el.addEventListener('click', ()=>{ active = el.dataset.id; renderShell(); }));
+      const body = document.getElementById('chatBody'); body.scrollTop = body.scrollHeight;
+
+      document.getElementById('chatForm').addEventListener('submit', (e)=>{
+        e.preventDefault();
+        const input = document.getElementById('chatInput');
+        if(!input.value.trim()) return;
+        conv.thread.push({from:'me', text:input.value.trim(), time:'الآن'});
+        conv.last = 'أنت: ' + input.value.trim();
+        input.value='';
+        renderShell();
+        const b = document.getElementById('chatBody'); b.innerHTML += `<div class="typing"><span></span><span></span><span></span></div>`; b.scrollTop = b.scrollHeight;
+        setTimeout(()=>{
+          conv.thread.push({from:'them', text:'تمام، وصلتني رسالتك 👍', time:'الآن'});
+          renderShell();
+        }, 1400);
+      });
+    }
+    renderShell();
+  }
+
+  // =========================================================
+  // وضع حقيقي (متصل بـ Supabase) — Real-time + مؤشر الكتابة + قراءة
+  // =========================================================
+  async function initLive(){
+    const shell = document.getElementById('msgShell');
+    shell.innerHTML = `<div style="grid-column:1/-1;" class="empty-state"><div class="icon">⏳</div>جارٍ تحميل الرسائل...</div>`;
+
+    const me = await DB.getCurrentUser();
+    if(!me){ shell.innerHTML = `<div style="grid-column:1/-1;" class="empty-state"><div class="icon">🔒</div>يجب تسجيل الدخول لعرض الرسائل</div>`; return; }
+
+    let conversations = [];
+    let active = null;      // id المستخدم الآخر النشط حالياً
+    let activeProfile = null;
+    let messages = [];
+    let typingChan = null;
+    let typingTimeout = null;
+    let partnerTyping = false;
+    let partnerTypingTimeout = null;
+    let incomingSub = null;
+    let readSub = null;
+
+    try{
+      conversations = await DB.listConversations();
+    }catch(err){
+      shell.innerHTML = `<div style="grid-column:1/-1;" class="empty-state"><div class="icon">⚠️</div>تعذر تحميل المحادثات: ${err.message}<div class="text-faint mt-8" style="font-size:12px;">تأكد من تنفيذ آخر نسخة من schema.sql (جدول messages) في مشروع Supabase.</div></div>`;
+      return;
+    }
+
+    // اشتراك عام: أي رسالة جديدة تصلني (حتى من محادثة غير مفتوحة حالياً)
+    incomingSub = DB.subscribeToIncomingMessages(me.id, async (msg)=>{
+      if(active === msg.sender_id){
+        messages.push(msg);
+        renderChatBody();
+        try{ await DB.markMessagesRead(active); }catch(e){}
+      }
+      await refreshConversations();
+    });
+
+    // اشتراك عام: إشعار عندما يقرأ الطرف الآخر رسائلي (لتحديث ✓✓)
+    readSub = DB.subscribeToReadReceipts(me.id, (msg)=>{
+      const local = messages.find(m=>m.id===msg.id);
+      if(local){ local.read_at = msg.read_at; renderChatBody(); }
+    });
+
+    async function refreshConversations(){
+      try{ conversations = await DB.listConversations(); renderList(); }catch(e){}
+    }
+
+    function fmtTime(iso){
+      try{ return new Date(iso).toLocaleTimeString('ar', { hour:'2-digit', minute:'2-digit' }); }catch(e){ return ''; }
+    }
+
+    function renderShellFrame(){
+      shell.innerHTML = `
+        <div class="conv-list" id="convList">
+          <div class="conv-search">
+            <input type="text" id="peopleSearch" placeholder="ابحث عن شخص لبدء محادثة...">
+            <div class="conv-search-results" id="searchResults" hidden></div>
+          </div>
+          <div id="convItems"></div>
+        </div>
+        <div class="chat-pane" id="chatPane">
+          <div class="empty-state" style="margin:auto;"><div class="icon">💬</div>اختر محادثة أو ابحث عن شخص لبدء الدردشة</div>
+        </div>`;
+
+      renderList();
+      wireSearch();
+    }
+
+    function renderList(){
+      const wrap = document.getElementById('convItems');
+      if(!wrap) return;
+      wrap.innerHTML = conversations.length ? conversations.map(c=>{
+        const p = c.other || {};
+        const isActive = active === p.id;
+        const lastText = c.lastMessage.content;
+        return `<div class="conv-item ${isActive?'active':''}" data-id="${p.id}">
+          ${WH.initialsAvatar(p,44)}
+          <div style="flex:1;min-width:0">
+            <div class="conv-name"><span>${WH.displayName(p)}</span><time>${fmtTime(c.lastMessage.created_at)}</time></div>
+            <div class="conv-last truncate">${lastText}</div>
+          </div>
+          ${c.unread?`<span class="conv-unread">${c.unread}</span>`:''}
+        </div>`;
+      }).join('') : `<div class="empty-state" style="padding:30px 16px;"><div class="icon">📭</div>لا توجد محادثات بعد<div class="text-faint mt-8" style="font-size:12px;">ابحث عن شخص بالأعلى لبدء أول محادثة</div></div>`;
+
+      wrap.querySelectorAll('.conv-item').forEach(el=>{
+        el.addEventListener('click', ()=>{
+          const p = conversations.find(c=>c.other.id===el.dataset.id).other;
+          openConversation(p);
+        });
+      });
+    }
+
+    function wireSearch(){
+      const input = document.getElementById('peopleSearch');
+      const results = document.getElementById('searchResults');
+      let debounce = null;
+      input.addEventListener('input', ()=>{
+        clearTimeout(debounce);
+        const q = input.value.trim();
+        if(!q){ results.hidden = true; results.innerHTML=''; return; }
+        debounce = setTimeout(async ()=>{
+          try{
+            const people = await DB.searchProfiles(q);
+            if(!people.length){ results.hidden = false; results.innerHTML = `<div class="conv-search-result text-faint">لا نتائج</div>`; return; }
+            results.hidden = false;
+            results.innerHTML = people.map(p=>`<div class="conv-search-result" data-id="${p.id}">${WH.initialsAvatar(p,36)}<div><div class="fw-700" style="font-size:13px;">${WH.displayName(p)}</div><div class="text-faint" style="font-size:11.5px;">${p.handle||''}</div></div></div>`).join('');
+            results.querySelectorAll('.conv-search-result[data-id]').forEach(el=>{
+              el.addEventListener('click', ()=>{
+                const p = people.find(x=>x.id===el.dataset.id);
+                results.hidden = true; input.value = '';
+                openConversation(p);
+              });
+            });
+          }catch(err){ WH.toast('تعذر البحث: ' + err.message); }
+        }, 350);
+      });
+      document.addEventListener('click', (e)=>{
+        if(!e.target.closest('.conv-search')) results.hidden = true;
+      });
+    }
+
+    async function openConversation(profile){
+      if(typingChan){ DB.removeChannel(typingChan); typingChan = null; }
+      active = profile.id;
+      activeProfile = profile;
+      renderList();
+
+      const pane = document.getElementById('chatPane');
+      pane.innerHTML = `<div class="empty-state" style="margin:auto;"><div class="icon">⏳</div>جارٍ تحميل المحادثة...</div>`;
+
+      try{
+        messages = await DB.listMessages(active);
+      }catch(err){
+        pane.innerHTML = `<div class="empty-state" style="margin:auto;"><div class="icon">⚠️</div>تعذر تحميل الرسائل: ${err.message}</div>`;
+        return;
+      }
+
+      pane.innerHTML = `
+        <div class="chat-head">
+          ${WH.initialsAvatar(activeProfile,40)}
+          <div><div class="fw-800">${WH.displayName(activeProfile)}</div><div class="status" id="chatStatus">${activeProfile.handle||''}</div></div>
+        </div>
+        <div class="chat-body" id="chatBody"></div>
+        <form class="chat-input" id="chatForm">
+          <input type="text" placeholder="اكتب رسالة..." id="chatInput" autocomplete="off" required>
+          <button type="submit" class="btn btn-primary btn-sm">إرسال</button>
+        </form>`;
+
+      renderChatBody();
+
+      try{ await DB.markMessagesRead(active); await refreshConversations(); }catch(e){}
+
+      // قناة الكتابة الآن (Broadcast) بيني وبين هذا الشخص تحديداً
+      typingChan = DB.typingChannel(me.id, active);
+      typingChan
+        .on('broadcast', { event:'typing' }, ({ payload })=>{
+          if(payload.from !== active) return;
+          partnerTyping = !!payload.typing;
+          updateTypingUI();
+          clearTimeout(partnerTypingTimeout);
+          if(partnerTyping){
+            partnerTypingTimeout = setTimeout(()=>{ partnerTyping = false; updateTypingUI(); }, 3000);
+          }
+        })
+        .subscribe();
+
+      const chatInput = document.getElementById('chatInput');
+      chatInput.addEventListener('input', ()=>{
+        if(!typingChan) return;
+        typingChan.send({ type:'broadcast', event:'typing', payload:{ from: me.id, typing:true } });
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(()=>{
+          typingChan.send({ type:'broadcast', event:'typing', payload:{ from: me.id, typing:false } });
+        }, 1500);
+      });
+
+      document.getElementById('chatForm').addEventListener('submit', async (e)=>{
+        e.preventDefault();
+        const val = chatInput.value.trim();
+        if(!val) return;
+        chatInput.value = '';
+        clearTimeout(typingTimeout);
+        if(typingChan) typingChan.send({ type:'broadcast', event:'typing', payload:{ from: me.id, typing:false } });
+        try{
+          const sent = await DB.sendMessage(active, val);
+          messages.push(sent);
+          renderChatBody();
+          await refreshConversations();
+        }catch(err){ WH.toast('تعذر إرسال الرسالة: ' + err.message); }
+      });
+    }
+
+    function updateTypingUI(){
+      const statusEl = document.getElementById('chatStatus');
+      if(statusEl){
+        statusEl.textContent = partnerTyping ? 'يكتب الآن...' : (activeProfile.handle || '');
+        statusEl.classList.toggle('typing', partnerTyping);
+      }
+      renderChatBody();
+    }
+
+    function renderChatBody(){
+      const body = document.getElementById('chatBody');
+      if(!body) return;
+      const bubbles = messages.map(m=>{
+        const out = m.sender_id === me.id;
+        const ticks = out ? (m.read_at ? '✓✓' : '✓') : '';
+        return `<div class="bubble ${out?'out':'in'}">${m.content}<time>${fmtTime(m.created_at)} ${ticks}</time></div>`;
+      }).join('');
+      const typingHTML = partnerTyping ? `<div class="typing"><span></span><span></span><span></span></div>` : '';
+      body.innerHTML = bubbles + typingHTML;
+      body.scrollTop = body.scrollHeight;
+    }
+
+    renderShellFrame();
+  }
+</script>
+</body>
+</html>

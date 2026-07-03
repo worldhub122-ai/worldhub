@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorldHub — منشور</title>
+<link rel="stylesheet" href="main.css">
+<link rel="stylesheet" href="sidebar.css">
+<link rel="stylesheet" href="tabs.css">
+<link rel="stylesheet" href="modals.css">
+</head>
+<body data-page="home">
+
+<header class="topbar">
+  <a href="index.html" class="brand"><div class="brand__mark">🌍</div><div class="brand__name">World<span>Hub</span></div></a>
+  <div class="topbar__search"><span id="ic-search"></span><input type="text" placeholder="ابحث..."><span class="kbd">⌘K</span></div>
+  <div class="topbar__actions">
+    <a href="notifications.html" class="icon-btn"><span class="badge">8</span><span id="ic-bell"></span></a>
+    <a href="messages.html" class="icon-btn"><span class="badge">3</span><span id="ic-msg"></span></a>
+    <a href="profile.html"><img class="avatar" width="40" height="40" src="https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=200&auto=format&fit=crop"></a>
+  </div>
+</header>
+
+<div class="layout layout--narrow">
+  <aside class="col-right col-sticky">
+    <nav class="nav">
+      <a href="index.html" class="nav__link" data-page="home">${nav-home}<span>الرئيسية</span></a>
+      <a href="reels.html" class="nav__link" data-page="reels">${nav-reels}<span>الريلز</span></a>
+      <a href="messages.html" class="nav__link" data-page="messages">${nav-messages}<span>الرسائل</span></a>
+      <a href="notifications.html" class="nav__link" data-page="notifications">${nav-bell}<span>الإشعارات</span></a>
+      <a href="worlds.html" class="nav__link" data-page="worlds">${nav-globe}<span>العوالم</span></a>
+      <a href="dashboard.html" class="nav__link" data-page="dashboard">${nav-dashboard}<span>لوحة المعلومات</span></a>
+      <a href="profile.html" class="nav__link" data-page="profile">${nav-user}<span>الملف الشخصي</span></a>
+    </nav>
+  </aside>
+
+  <main class="col-center" style="max-width:640px;">
+    <div class="card" id="postCard"></div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="supabase.js"></script>
+<script src="auth-guard.js"></script>
+<script src="app.js"></script>
+<script>
+  const iconMap = {'ic-search':'search','ic-bell':'bell','ic-msg':'messages','nav-home':'home','nav-reels':'reels','nav-messages':'messages','nav-bell':'bell','nav-globe':'globe','nav-dashboard':'dashboard','nav-user':'user'};
+  document.body.innerHTML = document.body.innerHTML.replace(/\$\{([a-z0-9\-]+)\}/g, (_, key) => WH.ICONS[iconMap[key]] || '');
+
+  const params = new URLSearchParams(location.search);
+  const postId = params.get('id');
+  const isDemo = params.get('demo') === '1';
+  const card = document.getElementById('postCard');
+
+  function notFound(msg){
+    card.className = 'card empty-state';
+    card.innerHTML = `<div class="icon">🌌</div><div class="fw-800">${msg}</div><a href="index.html" class="btn btn-primary mt-16" style="display:inline-flex;">العودة للرئيسية</a>`;
+  }
+
+  if(!postId){ notFound('لم يتم تحديد منشور'); }
+  else if(WH.isLive() && !isDemo){
+    loadLive();
+  } else {
+    const p = WH.state.posts.find(x=>x.id===postId);
+    if(!p){ notFound('هذا المنشور غير موجود أو تم حذفه'); }
+    else{
+      card.innerHTML = WH.postCardHTML(p);
+      WH.bindPostEvents(card);
+    }
+  }
+
+  async function loadLive(){
+    card.innerHTML = `<div class="empty-state"><div class="icon">⏳</div>جارٍ تحميل المنشور...</div>`;
+    try{
+      const [post, user] = await Promise.all([ DB.getPost(postId), DB.getCurrentUser() ]);
+      let savedIds = new Set();
+      if(user){ try{ savedIds = new Set(await DB.listSavedPostIds()); }catch(e){} }
+      card.innerHTML = WH.livePostCardHTML(post, user?user.id:null, savedIds);
+      WH.bindLivePostEvents(card);
+    }catch(err){
+      notFound('هذا المنشور غير موجود أو تم حذفه');
+    }
+  }
+</script>
+</body>
+</html>
