@@ -140,6 +140,7 @@ function renderTopbar(){
       <a href="notifications.html" class="icon-btn">🔔<span class="dot">6</span></a>
       <a href="messages.html" class="icon-btn">💬<span class="dot">3</span></a>
       <a href="profile.html" class="avatar-btn"><img src="${MOCK.user.avatar}" alt="${MOCK.user.name}"></a>
+      <a href="#" id="logoutBtn" class="icon-btn" title="Déconnexion">🚪</a>
     </div>
   </div>`;
 }
@@ -214,7 +215,19 @@ function wireMobileMenu(){
    Call once per page:
    initLayout({ active:'home', rail: defaultRail(), mainHTML: '<div class="main-col">...</div>', noRail:false })
 ----------------------------------------------------- */
-function initLayout({ active, rail, mainHTML, noRail=false, wide=false }){
+async function initLayout({ active, rail, mainHTML, noRail=false, wide=false }){
+  // --- auth guard: every page that calls initLayout is a protected page.
+  // If Supabase is configured (DB.isConnected) and there is no active session,
+  // send the visitor to login.html instead of rendering the app shell.
+  if(typeof DB !== 'undefined' && DB.isConnected){
+    try{
+      const session = await DB.getSession();
+      if(!session){ location.href = 'login.html'; return; }
+    }catch(e){
+      console.error('Auth check failed:', e);
+    }
+  }
+
   document.getElementById('topbar-slot').innerHTML = renderTopbar();
   document.getElementById('shell-slot').innerHTML = `
     <div class="shell">
@@ -226,6 +239,21 @@ function initLayout({ active, rail, mainHTML, noRail=false, wide=false }){
     </div>`;
   wireMobileMenu();
   wireGlobalInteractions();
+  wireLogout();
+}
+
+function wireLogout(){
+  const btn = document.getElementById('logoutBtn');
+  if(!btn) return;
+  btn.addEventListener('click', async (e)=>{
+    e.preventDefault();
+    try{
+      if(typeof DB !== 'undefined' && DB.isConnected) await DB.signOut();
+    }catch(err){
+      console.error('signOut failed:', err);
+    }
+    location.href = 'login.html';
+  });
 }
 
 /* ---------------- GENERIC INTERACTIONS ---------------- */
@@ -252,18 +280,88 @@ function wireGlobalInteractions(){
   });
 }
 
-/* ---------------- BACKEND STUBS ----------------
-   Replace the bodies below with real Supabase / Firebase calls.
-   Keeping the same function names means the UI code above never
-   has to change when you wire up the real database.
+/* ---------------- MAPPERS ----------------
+   Convert Supabase row shapes (supabase.js) into the flat shapes
+   the render functions above already expect (MOCK.* shapes), so
+   none of the page templates need to change.
+------------------------------------------------- */
+function timeAgo(iso){
+  if(!iso) return '';
+  const diff = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if(diff < 60) return 'à l’instant';
+  if(diff < 3600) return `il y a ${Math.floor(diff/60)} min`;
+  if(diff < 86400) return `il y a ${Math.floor(diff/3600)}h`;
+  if(diff < 604800) return `il y a ${Math.floor(diff/86400)}j`;
+  return new Date(iso).toLocaleDateString('fr-FR');
+}
+function fullName(p){ return [p?.first_name, p?.last_name].filter(Boolean).join(' ') || 'Utilisateur'; }
+function worldName(worldId){ return MOCK.worlds.find(w=>w.id===worldId)?.name || ''; }
+
+function mapPostRow(row){
+  return {
+    id: row.id,
+    author: fullName(row.author),
+    handle: row.author?.handle || '',
+    time: timeAgo(row.created_at),
+    world: worldName(row.world_id),
+    text: row.content,
+    code: null,
+    highlight: false,
+    likes: (row.likes || []).length,
+    comments: (row.comments || []).length,
+    shares: 0,
+  };
+}
+
+function mapConversationRow(row){
+  const other = row.other || {};
+  return {
+    id: other.id,
+    name: fullName(other),
+    avatar: other.avatar_url || `https://i.pravatar.cc/80?u=${other.id || 'unknown'}`,
+    preview: row.lastMessage?.content || '',
+    time: timeAgo(row.lastMessage?.created_at),
+    online: false, // needs Supabase Presence — not wired yet
+    unread: row.unread || 0,
+  };
+}
+
+/* ---------------- BACKEND ----------------
+   When Supabase is configured (DB.isConnected), calls go to the
+   real database via supabase.js. Otherwise everything falls back
+   to MOCK data so the UI still previews without a backend.
+   NOTE: notifications and worlds have no matching tables/functions
+   in supabase.js yet — those two still return MOCK data either way.
 ------------------------------------------------- */
 const api = {
-  async getFeed(){ return MOCK.posts; },
-  async getWorlds(){ return MOCK.worlds; },
-  async getNotifications(){ return MOCK.notifications; },
-  async getConversations(){ return MOCK.conversations; },
-  async sendMessage(threadId, text){ console.log('sendMessage->supabase', threadId, text); return true; },
-  async createPost(payload){ console.log('createPost->supabase', payload); return true; },
-  async toggleFollow(userId){ console.log('toggleFollow->supabase', userId); return true; },
-  async toggleLike(postId){ console.log('toggleLike->supabase', postId); return true; },
+  async getFeed(){
+    if(!DB.isConnected) return MOCK.posts;
+    try{ return (await DB.listPosts()).map(mapPostRow); }
+    catch(e){ console.error('getFeed failed, falling back to MOCK:', e); return MOCK.posts; }
+  },
+  async getWorlds(){ return MOCK.worlds; }, // TODO: add a `worlds` table + DB.listWorlds()
+  async getNotifications(){ return MOCK.notifications; }, // TODO: add a `notifications` table + DB functions
+  async getConversations(){
+    if(!DB.isConnected) return MOCK.conversations;
+    try{ return (await DB.listConversations()).map(mapConversationRow); }
+    catch(e){ console.error('getConversations failed, falling back to MOCK:', e); return MOCK.conversations; }
+  },
+  async sendMessage(recipientId, text){
+    if(!DB.isConnected){ console.log('sendMessage (mock)', recipientId, text); return true; }
+    await DB.sendMessage(recipientId, text);
+    return true;
+  },
+  async createPost(content, worldId=null){
+    if(!DB.isConnected){ console.log('createPost (mock)', content, worldId); return true; }
+    await DB.createPost({ content, worldId });
+    return true;
+  },
+  async toggleFollow(userId){
+    if(!DB.isConnected){ console.log('toggleFollow (mock)', userId); return true; }
+    return await DB.toggleFollow(userId);
+  },
+  async toggleLike(postId){
+    if(!DB.isConnected){ console.log('toggleLike (mock)', postId); return true; }
+    return await DB.toggleLike(postId);
+  },
 };

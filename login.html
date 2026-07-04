@@ -1,127 +1,209 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="fr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WorldHub — تسجيل الدخول</title>
-<link rel="stylesheet" href="main.css">
+<title>WorldHub — Connexion</title>
+<link rel="stylesheet" href="assets/css/main.css">
 <style>
-  .auth-wrap{ min-height:100vh; display:grid; grid-template-columns: 1fr 460px; }
-  .auth-hero{
-    position:relative; overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end; padding:52px;
-    background:
-      radial-gradient(700px 500px at 20% 10%, rgba(139,92,246,.18), transparent 60%),
-      radial-gradient(600px 500px at 90% 90%, rgba(20,184,166,.14), transparent 55%),
-      linear-gradient(160deg,#f5f3ff,#eef2ff 60%,#f8fafc);
-  }
-  .auth-hero__worlds{ display:flex; flex-wrap:wrap; gap:10px; margin-bottom:34px; max-width:520px; }
-  .auth-chip{ display:flex; align-items:center; gap:8px; background:rgba(139,92,246,.08); border:1px solid rgba(139,92,246,.16); color:var(--text); padding:8px 14px; border-radius:99px; font-size:13px; font-weight:700; backdrop-filter:blur(6px); }
-  .auth-hero h1{ font-family:var(--font-display); font-size:38px; font-weight:900; max-width:520px; line-height:1.35; }
-  .auth-hero p{ color:var(--text-dim); margin-top:14px; max-width:460px; font-size:15px; }
-  .auth-form{ display:flex; flex-direction:column; justify-content:center; padding:52px 44px; }
-  .auth-form .brand{ margin-bottom:30px; }
-  .auth-form h2{ font-family:var(--font-display); font-size:24px; font-weight:800; margin-bottom:6px; }
-  .auth-form .sub{ color:var(--text-dim); font-size:13.5px; margin-bottom:26px; }
-  .or-sep{ display:flex; align-items:center; gap:12px; color:var(--text-faint); font-size:12px; margin:18px 0; }
-  .or-sep::before, .or-sep::after{ content:''; flex:1; height:1px; background:var(--border); }
-  .social-row{ display:flex; gap:10px; }
-  .social-row .btn{ flex:1; }
-  .foot-link{ text-align:center; margin-top:22px; font-size:13.5px; color:var(--text-dim); }
-  .foot-link a{ color:var(--accent-2); font-weight:800; }
-  @media (max-width:900px){ .auth-wrap{ grid-template-columns:1fr; } .auth-hero{ display:none; } }
+  body{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;}
+  .auth-wrap{width:100%;max-width:400px;}
+  .auth-brand{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:26px;}
+  .auth-brand .glyph{width:38px;height:38px;border-radius:12px;background:var(--accent-grad);display:flex;align-items:center;justify-content:center;font-size:19px;box-shadow:0 6px 18px -6px rgba(139,92,246,.7);}
+  .auth-brand .name{font-weight:800;font-size:21px;letter-spacing:-.02em;}
+  .auth-card{padding:26px 24px;}
+  .auth-tabs{display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-pill);padding:4px;margin-bottom:22px;}
+  .auth-tab{flex:1;text-align:center;padding:8px 0;border-radius:var(--radius-pill);font-size:13.5px;font-weight:600;color:var(--text-3);cursor:pointer;transition:.15s;user-select:none;}
+  .auth-tab.active{background:var(--accent-grad);color:#fff;box-shadow:0 4px 12px -4px rgba(139,92,246,.6);}
+  .auth-title{font-size:18px;font-weight:800;margin:0 0 4px;}
+  .auth-sub{font-size:13px;color:var(--text-3);margin:0 0 20px;}
+  .name-row{display:flex;gap:10px;}
+  .name-row .field{flex:1;}
+  .auth-submit{width:100%;padding:11px 0;font-size:14px;margin-top:4px;}
+  .auth-divider{display:flex;align-items:center;gap:10px;margin:20px 0;color:var(--text-3);font-size:12px;}
+  .auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--border-soft);}
+  .btn-google{width:100%;background:var(--surface-2);color:var(--text-1);border:1px solid var(--border);padding:10px 0;font-size:13.5px;}
+  .btn-google:hover{background:var(--surface-3);}
+  .auth-switch{text-align:center;font-size:13px;color:var(--text-3);margin-top:20px;}
+  .auth-switch a{color:var(--accent-2);font-weight:600;cursor:pointer;}
+  .auth-banner{font-size:13px;padding:10px 13px;border-radius:var(--radius-sm);margin-bottom:16px;display:none;}
+  .auth-banner.show{display:block;}
+  .auth-banner.error{background:var(--red-soft);color:var(--red);}
+  .auth-banner.success{background:var(--green-soft);color:var(--green);}
+  .auth-form{display:none;}
+  .auth-form.active{display:block;}
+  .field-error{font-size:12px;color:var(--red);margin-top:-2px;}
 </style>
 </head>
-<body data-page="login">
+<body>
 <div class="auth-wrap">
-  <section class="auth-hero">
-    <div class="auth-hero__worlds">
-      <span class="auth-chip">💻 البرمجة</span>
-      <span class="auth-chip">🤖 الذكاء الاصطناعي</span>
-      <span class="auth-chip">🎨 التصميم</span>
-      <span class="auth-chip">💼 ريادة الأعمال</span>
-      <span class="auth-chip">📈 المالية</span>
-      <span class="auth-chip">🎓 التعليم</span>
+  <div class="auth-brand">
+    <div class="glyph">🌍</div>
+    <div class="name">WorldHub</div>
+  </div>
+
+  <div class="card auth-card">
+    <div class="auth-tabs">
+      <div class="auth-tab active" data-tab="signin">Connexion</div>
+      <div class="auth-tab" data-tab="signup">Inscription</div>
     </div>
-    <h1>منصة واحدة، وعوالم لا حصر لها.</h1>
-    <p>WorldHub يجمع الشبكات المهنية، والمجتمعات المتخصصة، والنقاش، والتوظيف — في مكان واحد. انضم إلى العالم الذي يناسب اهتمامك.</p>
-  </section>
 
-  <section class="auth-form">
-    <a href="index.html" class="brand">
-      <div class="brand__mark">🌍</div>
-      <div class="brand__name">World<span>Hub</span></div>
-    </a>
-    <h2>تسجيل الدخول</h2>
-    <div class="sub">سعداء بعودتك. أدخل بياناتك للمتابعة إلى عوالمك.</div>
+    <div id="authBanner" class="auth-banner"></div>
 
-    <form id="loginForm">
+    <!-- SIGN IN -->
+    <form id="signinForm" class="auth-form active">
+      <p class="auth-title">Bon retour parmi nous</p>
+      <p class="auth-sub">Connectez-vous pour retrouver votre fil et vos Mondes.</p>
       <div class="field">
-        <label>البريد الإلكتروني</label>
-        <input type="email" placeholder="name@example.com" required>
+        <label>Adresse e-mail</label>
+        <input type="email" id="signinEmail" placeholder="vous@exemple.com" required autocomplete="email">
       </div>
       <div class="field">
-        <label>كلمة المرور</label>
-        <input type="password" placeholder="••••••••" required>
+        <label>Mot de passe</label>
+        <input type="password" id="signinPassword" placeholder="••••••••" required autocomplete="current-password">
       </div>
-      <div class="flex justify-between items-center mb-16" style="font-size:13px;">
-        <label class="flex items-center gap-8"><input type="checkbox" style="width:auto;"> تذكرني</label>
-        <a href="#" class="text-accent fw-700">نسيت كلمة المرور؟</a>
-      </div>
-      <button type="submit" class="btn btn-primary btn-block">تسجيل الدخول</button>
+      <button type="submit" class="btn btn-primary auth-submit">Se connecter</button>
     </form>
 
-    <div class="or-sep">أو المتابعة عبر</div>
-    <div class="social-row">
-      <button type="button" class="btn btn-secondary" data-provider="google">Google</button>
-      <button type="button" class="btn btn-secondary" data-provider="apple">Apple</button>
-      <button type="button" class="btn btn-secondary" data-provider="github">GitHub</button>
-    </div>
+    <!-- SIGN UP -->
+    <form id="signupForm" class="auth-form">
+      <p class="auth-title">Créer un compte</p>
+      <p class="auth-sub">Rejoignez les Mondes WorldHub en quelques secondes.</p>
+      <div class="name-row">
+        <div class="field">
+          <label>Prénom</label>
+          <input type="text" id="signupFirstName" placeholder="Alex" required autocomplete="given-name">
+        </div>
+        <div class="field">
+          <label>Nom</label>
+          <input type="text" id="signupLastName" placeholder="Dev" required autocomplete="family-name">
+        </div>
+      </div>
+      <div class="field">
+        <label>Adresse e-mail</label>
+        <input type="email" id="signupEmail" placeholder="vous@exemple.com" required autocomplete="email">
+      </div>
+      <div class="field">
+        <label>Mot de passe</label>
+        <input type="password" id="signupPassword" placeholder="8 caractères minimum" required minlength="8" autocomplete="new-password">
+      </div>
+      <button type="submit" class="btn btn-primary auth-submit">Créer mon compte</button>
+    </form>
 
-    <div class="foot-link">ليس لديك حساب؟ <a href="signup.html">إنشاء حساب جديد</a></div>
-  </section>
+    <div class="auth-divider">ou</div>
+    <button id="googleBtn" class="btn btn-google">
+      <span>🔵</span> Continuer avec Google
+    </button>
+
+    <div class="auth-switch">
+      <span id="switchText">Pas encore de compte ? <a id="switchLink">S'inscrire</a></span>
+    </div>
+  </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="supabase.js"></script>
-<script src="auth-guard.js"></script>
-<script src="app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/supabase.js"></script>
 <script>
-  document.getElementById('loginForm').addEventListener('submit', async (e)=>{
-    e.preventDefault();
-    const [email, password] = e.target.querySelectorAll('input[type=email], input[type=password]');
-    const btn = e.target.querySelector('button[type=submit]');
-    if(WH.isLive()){
-      btn.disabled = true; btn.textContent = 'جارٍ الدخول...';
-      try{
-        await DB.signIn({ email: email.value, password: password.value });
-        window.location.href = 'index.html';
-      }catch(err){
-        WH.toast('فشل تسجيل الدخول: ' + err.message);
-        btn.disabled = false; btn.textContent = 'تسجيل الدخول';
-      }
-    }else{
-      window.location.href = 'index.html';
-    }
-  });
+/* ---------------- tab switching ---------------- */
+const tabs = document.querySelectorAll('.auth-tab');
+const forms = { signin: document.getElementById('signinForm'), signup: document.getElementById('signupForm') };
+const switchText = document.getElementById('switchText');
 
-  // ---- تسجيل الدخول عبر Google / Apple / GitHub ----
-  document.querySelectorAll('.social-row [data-provider]').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
-      const provider = btn.dataset.provider;
-      if(!WH.isLive()){
-        WH.toast('تسجيل الدخول عبر ' + btn.textContent + ' يتطلب اتصالاً حقيقياً بـ Supabase (وضع تجريبي حالياً)');
-        return;
-      }
-      btn.disabled = true;
-      try{
-        // سيُعيد Supabase توجيه المتصفح تلقائياً إلى صفحة تسجيل الدخول الخاصة بالمزوّد
-        await DB.signInWithOAuth(provider);
-      }catch(err){
-        WH.toast('تعذر تسجيل الدخول عبر ' + btn.textContent + ': ' + err.message);
-        btn.disabled = false;
-      }
-    });
-  });
+function setTab(name){
+  tabs.forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
+  Object.entries(forms).forEach(([k,f])=>f.classList.toggle('active', k===name));
+  switchText.innerHTML = name==='signin'
+    ? `Pas encore de compte ? <a id="switchLink">S'inscrire</a>`
+    : `Déjà un compte ? <a id="switchLink">Se connecter</a>`;
+  document.getElementById('switchLink').addEventListener('click', ()=> setTab(name==='signin' ? 'signup' : 'signin'));
+  hideBanner();
+}
+tabs.forEach(t=> t.addEventListener('click', ()=> setTab(t.dataset.tab)));
+document.getElementById('switchLink').addEventListener('click', ()=> setTab('signup'));
+
+/* ---------------- banner ---------------- */
+const banner = document.getElementById('authBanner');
+function showBanner(msg, type='error'){
+  banner.textContent = msg;
+  banner.className = `auth-banner show ${type}`;
+}
+function hideBanner(){ banner.className = 'auth-banner'; }
+
+/* ---------------- friendly error messages ---------------- */
+function friendlyError(err){
+  const m = (err && err.message) || '';
+  if(/Invalid login credentials/i.test(m)) return 'E-mail ou mot de passe incorrect.';
+  if(/already registered|already exists/i.test(m)) return 'Un compte existe déjà avec cet e-mail.';
+  if(/Password should be/i.test(m)) return 'Le mot de passe doit contenir au moins 8 caractères.';
+  if(/Supabase غير متصل/.test(m)) return 'Le backend n’est pas configuré (SUPABASE_URL / ANON_KEY manquants dans supabase.js).';
+  return m || 'Une erreur est survenue. Réessayez.';
+}
+
+function setLoading(btn, loading, label){
+  btn.disabled = loading;
+  btn.textContent = loading ? 'Un instant…' : label;
+}
+
+/* ---------------- redirect away if already signed in ---------------- */
+(async function guard(){
+  if(typeof DB === 'undefined' || !DB.isConnected) return; // no backend configured, let the form show
+  try{
+    const session = await DB.getSession();
+    if(session) location.href = 'index.html';
+  }catch(e){ console.warn('session check failed', e); }
+})();
+
+/* ---------------- sign in ---------------- */
+document.getElementById('signinForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  hideBanner();
+  const btn = e.target.querySelector('button[type="submit"]');
+  const email = document.getElementById('signinEmail').value.trim();
+  const password = document.getElementById('signinPassword').value;
+  setLoading(btn, true, 'Se connecter');
+  try{
+    await DB.signIn({ email, password });
+    location.href = 'index.html';
+  }catch(err){
+    showBanner(friendlyError(err), 'error');
+    setLoading(btn, false, 'Se connecter');
+  }
+});
+
+/* ---------------- sign up ---------------- */
+document.getElementById('signupForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  hideBanner();
+  const btn = e.target.querySelector('button[type="submit"]');
+  const firstName = document.getElementById('signupFirstName').value.trim();
+  const lastName = document.getElementById('signupLastName').value.trim();
+  const email = document.getElementById('signupEmail').value.trim();
+  const password = document.getElementById('signupPassword').value;
+  setLoading(btn, true, 'Créer mon compte');
+  try{
+    const data = await DB.signUp({ email, password, firstName, lastName });
+    if(data && data.session){
+      location.href = 'index.html';
+    }else{
+      showBanner('Compte créé ! Vérifiez votre boîte mail pour confirmer votre adresse avant de vous connecter.', 'success');
+      setLoading(btn, false, 'Créer mon compte');
+      setTab('signin');
+    }
+  }catch(err){
+    showBanner(friendlyError(err), 'error');
+    setLoading(btn, false, 'Créer mon compte');
+  }
+});
+
+/* ---------------- Google OAuth ---------------- */
+document.getElementById('googleBtn').addEventListener('click', async ()=>{
+  hideBanner();
+  try{
+    await DB.signInWithOAuth('google');
+  }catch(err){
+    showBanner(friendlyError(err), 'error');
+  }
+});
 </script>
 </body>
 </html>
