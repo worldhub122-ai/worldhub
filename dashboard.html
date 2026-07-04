@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorldHub — Tableau de bord</title>
+<link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div id="topbar-slot"></div>
+<div id="shell-slot"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/supabase.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+function statCard(icon,color,val,lbl,delta){
+  return `
+  <div class="card stat-card">
+    <div class="ic" style="background:${COLOR_VARS[color]}">${icon}</div>
+    <div class="val">${val}</div>
+    <div class="lbl">${lbl}</div>
+    <div class="delta">${delta}</div>
+  </div>`;
+}
+function bars(){
+  const vals=[40,65,35,80,55,90,60,75,50,85,45,70,95,60];
+  return vals.map(v=>`<div class="bar" style="height:${v}%"></div>`).join('');
+}
+
+function mainDash(){
+  return `
+  <div class="main-col">
+    <div class="card card-pad" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div style="font-size:19px;font-weight:800">Tableau de bord</div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <span class="pill pill-muted">1–30 juin 2024</span>
+        <button class="icon-btn">⟳</button>
+      </div>
+    </div>
+    <div class="stat-grid">
+      ${statCard('📝','accent','24','Publications','+12%')}
+      ${statCard('👥','blue','12.4k','Abonnés','+8%')}
+      ${statCard('💬','pink','3.2k','Interactions','+15%')}
+      ${statCard('👁️','green','45.6k','Vues','+20%')}
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Graphique des interactions</h3><span class="link">1 juin – 30 juin</span></div>
+      <div class="mini-chart">${bars()}</div>
+      <div style="display:flex;justify-content:space-between;padding:0 14px 14px;font-size:11px;color:var(--text-3)">
+        <span>1 juin</span><span>10 juin</span><span>15 juin</span><span>20 juin</span><span>25 juin</span><span>30 juin</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Activité récente</h3></div>
+      <div class="row"><span style="font-size:18px">➕</span><div><div class="row-title">Nouvel abonné</div><div class="row-sub">Sarah Parker · il y a 2 min</div></div></div>
+      <div class="row"><span style="font-size:18px">💬</span><div><div class="row-title">Nouveau commentaire sur votre publication</div><div class="row-sub">il y a 15 min</div></div></div>
+      <div class="row"><span style="font-size:18px">➕</span><div><div class="row-title">Nouvel abonné</div><div class="row-sub">John Smith · il y a 1h</div></div></div>
+      <div class="row"><span style="font-size:18px">❤️</span><div><div class="row-title">Votre publication a été aimée</div><div class="row-sub">il y a 2h</div></div></div>
+    </div>
+  </div>`;
+}
+initLayout({ active:'dashboard', mainHTML: mainDash(), noRail:true, wide:true });
+</script>
+</body>
+</html>

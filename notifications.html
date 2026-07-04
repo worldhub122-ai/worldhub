@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorldHub — Notifications</title>
+<link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div id="topbar-slot"></div>
+<div id="shell-slot"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/supabase.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+function notifRow(n){
+  return `
+  <div class="notif-row ${n.unread?'unread':''}">
+    <div class="notif-ic" style="background:${COLOR_VARS[n.color]}">${n.icon}</div>
+    <div style="flex:1">
+      <div style="font-size:14px">${n.text}</div>
+      <div style="font-size:12px;color:var(--text-3);margin-top:3px">${n.time}</div>
+    </div>
+    ${n.unread ? `<span style="width:8px;height:8px;border-radius:50%;background:var(--accent);margin-top:5px"></span>` : ''}
+  </div>`;
+}
+
+function filterRail(){
+  return `
+  <div class="card card-pad">
+    <h3 style="margin:0 0 12px;font-size:15px">Filtres</h3>
+    ${['Toutes','Mentions','Commentaires','J’aime','Abonnés','Système'].map((f,i)=>`
+      <div class="row" style="padding:9px 0;justify-content:space-between">
+        <span style="font-size:13.5px;${i===0?'font-weight:700;color:var(--text-1)':'color:var(--text-2)'}">${f}</span>
+        ${i===0?'<span class="pill pill-accent">●</span>':''}
+      </div>`).join('')}
+  </div>`;
+}
+
+function mainNotif(){
+  return `
+  <div class="main-col">
+    <div class="card">
+      <div class="card-head"><h3>Notifications</h3><span class="link" style="margin-right:14px">Tout marquer comme lu</span><span class="link">⚙️ Paramètres</span></div>
+      ${MOCK.notifications.map(notifRow).join('')}
+    </div>
+  </div>`;
+}
+initLayout({ active:'notifications', mainHTML: mainNotif(), rail: filterRail() });
+</script>
+</body>
+</html>
