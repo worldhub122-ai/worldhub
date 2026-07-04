@@ -12,6 +12,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="assets/js/supabase.js"></script>
+<script src="assets/js/auth-guard.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
 function postCard(p){
@@ -56,6 +57,12 @@ function composer(){
 }
 
 async function render(){
+  // Issue 3/5: hydrate user data for composer avatar
+  const profile = await api.getCurrentProfile();
+  MOCK.user.name   = profile.name;
+  MOCK.user.avatar = profile.avatar;
+  MOCK.user.handle = profile.handle;
+
   const posts = await api.getFeed();
   const mainHTML = `
     <div class="main-col">

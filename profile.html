@@ -12,8 +12,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="assets/js/supabase.js"></script>
+<script src="assets/js/auth-guard.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
+(async function() {
+  const _session = await requireAuth();
+  if (!_session) return;
+
 function profileRail(){
   return `
   <div class="card card-pad">
@@ -79,7 +84,20 @@ function mainProfile(){
   </div>`;
 }
 
-initLayout({ active:'profile', mainHTML: mainProfile(), rail: profileRail() });
+// Issue 5: load real profile from Supabase
+(async function loadProfile() {
+  const p = await api.getCurrentProfile();
+  // Patch MOCK.user so all template functions pick up real data
+  MOCK.user.name      = p.name;
+  MOCK.user.handle    = p.handle;
+  MOCK.user.avatar    = p.avatar;
+  MOCK.user.bio       = p.bio;
+  MOCK.user.followers = typeof p.followers === 'number' ? p.followers.toLocaleString('fr') : p.followers;
+  MOCK.user.following = typeof p.following === 'number' ? p.following.toLocaleString('fr') : p.following;
+  initLayout({ active:'profile', mainHTML: mainProfile(), rail: profileRail() });
+})();
+
+})();
 </script>
 </body>
 </html>

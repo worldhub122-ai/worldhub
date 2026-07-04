@@ -12,8 +12,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="assets/js/supabase.js"></script>
+<script src="assets/js/auth-guard.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
+(async function() {
+  const _session = await requireAuth();
+  if (!_session) return;
+
 function previewCard(){
   return `
   <div class="card">
@@ -43,9 +48,9 @@ function mainCreate(){
       </div>
       <div class="field">
         <label>Partager dans</label>
-        <select id="postWorld">
-          <option value="">Votre profil</option>
-          ${MOCK.worlds.map(w=>`<option value="${w.id}">${w.name}</option>`).join('')}
+        <select>
+          <option>Votre profil</option>
+          ${MOCK.worlds.map(w=>`<option>${w.name}</option>`).join('')}
         </select>
       </div>
       <div class="composer-actions" style="margin-bottom:16px">
@@ -56,12 +61,14 @@ function mainCreate(){
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end">
         <button class="btn btn-ghost" onclick="location.href='index.html'">Annuler</button>
-        <button class="btn btn-primary" onclick="api.createPost(document.getElementById('postText').value, document.getElementById('postWorld').value || null).then(()=>location.href='index.html')">Publier</button>
+        <button class="btn btn-primary" onclick="api.createPost(document.getElementById('postText').value).then(()=>location.href='index.html')">Publier</button>
       </div>
     </div>
   </div>`;
 }
 initLayout({ active:'create', mainHTML: mainCreate(), rail: previewCard() });
+
+})();
 </script>
 </body>
 </html>
