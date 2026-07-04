@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorldHub — Offres d’emploi</title>
+<link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div id="topbar-slot"></div>
+<div id="shell-slot"></div>
+
+<script src="assets/js/app.js"></script>
+<script>
+function jobCard(j){
+  return `
+  <div class="card card-pad" style="display:flex;gap:14px;align-items:flex-start">
+    <div class="tile" style="background:var(--accent-soft);color:var(--accent-2)">🧰</div>
+    <div style="flex:1">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-weight:700;font-size:15px">${j.title}</div>
+          <div style="color:var(--text-3);font-size:13px;margin-top:2px">${j.company} · ${j.place} · ${j.posted}</div>
+        </div>
+        <button class="btn btn-primary btn-sm">Postuler</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <span class="pill pill-accent">${j.tag}</span>
+        <span class="pill pill-muted">${j.type}</span>
+      </div>
+    </div>
+  </div>`;
+}
+function jobsRail(){
+  return `
+  <div class="card card-pad">
+    <h3 style="margin:0 0 12px;font-size:15px">Filtrer</h3>
+    <div class="field"><label>Type de contrat</label><select><option>Tous</option><option>CDI</option><option>Freelance</option><option>Stage</option></select></div>
+    <div class="field"><label>Lieu</label><select><option>Tous</option><option>Remote</option><option>Paris, FR</option><option>Lyon, FR</option></select></div>
+    <div class="field"><label>Monde</label><select><option>Tous</option>${MOCK.worlds.map(w=>`<option>${w.name}</option>`).join('')}</select></div>
+    <button class="btn btn-primary" style="width:100%">Appliquer</button>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Top recruteurs</h3></div>
+    ${MOCK.companies.slice(0,3).map(c=>`<div class="row"><div class="tile" style="background:var(--blue-soft);color:var(--blue)">🏢</div><div><div class="row-title">${c.name}</div><div class="row-sub">${c.openJobs} postes ouverts</div></div></div>`).join('')}
+  </div>`;
+}
+function mainJobs(){
+  return `
+  <div class="main-col">
+    <div class="card card-pad" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div><div style="font-size:19px;font-weight:800">Offres d’emploi</div><div style="color:var(--text-3);font-size:13px">${MOCK.jobs.length} offres disponibles</div></div>
+      <button class="btn btn-primary">+ Publier une offre</button>
+    </div>
+    ${MOCK.jobs.map(jobCard).join('')}
+  </div>`;
+}
+initLayout({ active:'jobs', mainHTML: mainJobs(), rail: jobsRail() });
+</script>
+</body>
+</html>

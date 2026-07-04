@@ -1,389 +1,76 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="fr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WorldHub — الرئيسية</title>
-<link rel="stylesheet" href="main.css">
-<link rel="stylesheet" href="sidebar.css">
-<link rel="stylesheet" href="tabs.css">
-<link rel="stylesheet" href="modals.css">
+<title>WorldHub — Accueil</title>
+<link rel="stylesheet" href="assets/css/main.css">
 </head>
-<body data-page="home">
+<body>
+<div id="topbar-slot"></div>
+<div id="shell-slot"></div>
 
-<header class="topbar">
-  <a href="index.html" class="brand">
-    <div class="brand__mark">🌍</div>
-    <div class="brand__name">World<span>Hub</span></div>
-  </a>
-  <div class="topbar__search">
-    <span id="ic-search"></span>
-    <input type="text" placeholder="ابحث عن أشخاص، منشورات، عوالم...">
-    <span class="kbd">⌘K</span>
-  </div>
-  <div class="topbar__actions">
-    <button class="btn btn-primary" id="btnCreateTop"><span id="ic-plus"></span> إنشاء</button>
-    <a href="notifications.html" class="icon-btn"><span class="badge">8</span><span id="ic-bell"></span></a>
-    <a href="messages.html" class="icon-btn"><span class="badge">3</span><span id="ic-msg"></span></a>
-    <a href="profile.html"><img class="avatar" width="40" height="40" src="https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=200&auto=format&fit=crop" alt="حسابي"></a>
-  </div>
-</header>
-
-<div class="layout">
-
-  <!-- ===== Right column: navigation ===== -->
-  <aside class="col-right col-sticky">
-    <nav class="nav">
-      <a href="index.html" class="nav__link" data-page="home">${nav-home}<span>الرئيسية</span></a>
-      <a href="reels.html" class="nav__link" data-page="reels">${nav-reels}<span>الريلز</span></a>
-      <a href="messages.html" class="nav__link" data-page="messages">${nav-messages}<span>الرسائل</span><span class="badge-count">3</span></a>
-      <a href="notifications.html" class="nav__link" data-page="notifications">${nav-bell}<span>الإشعارات</span><span class="badge-count">8</span></a>
-      <a href="worlds.html" class="nav__link" data-page="worlds">${nav-globe}<span>العوالم</span></a>
-      <a href="dashboard.html" class="nav__link" data-page="dashboard">${nav-dashboard}<span>لوحة المعلومات</span></a>
-      <a href="profile.html" class="nav__link" data-page="profile">${nav-user}<span>الملف الشخصي</span></a>
-      <a href="#" class="nav__link" data-page="more">${nav-more}<span>المزيد</span></a>
-    </nav>
-
-    <div class="nav__create">
-      <button class="btn btn-primary btn-block" id="btnCreateSide"><span id="ic-plus2"></span><span>إنشاء منشور</span></button>
-    </div>
-
-    <div class="nav__divider"></div>
-    <div class="nav__label">عوالمي</div>
-    <div id="myWorldsNav"></div>
-
-    <div class="side-footer">
-      <div class="brand__mark">🌍</div>
-      <span>WorldHub © 2026 · Meta 5</span>
-    </div>
-  </aside>
-
-  <!-- ===== Center column: feed ===== -->
-  <main class="col-center">
-    <div class="card card-pad" style="margin-bottom:16px;">
-      <div class="stories-bar" id="storiesBar"></div>
-    </div>
-
-    <div class="card">
-      <div class="composer card-pad">
-        <div class="composer__top">
-          <img class="avatar" width="46" height="46" src="https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=200&auto=format&fit=crop" alt="">
-          <div class="composer__input" id="composerOpen">ما الجديد في عالمك؟</div>
-        </div>
-        <div class="composer__tools">
-          <button class="composer__tool tool-image" id="toolImage">${tool-image}<span>صورة</span></button>
-          <button class="composer__tool tool-video" id="toolVideo">${tool-video}<span>فيديو</span></button>
-          <button class="composer__tool tool-world" id="toolWorld">${tool-globe}<span>عالم</span></button>
-          <button class="composer__tool tool-poll" id="toolPoll">${tool-poll}<span>استطلاع</span></button>
-          <button class="btn btn-primary btn-sm composer__submit" id="composerSubmitTop">نشر</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="card mt-16">
-      <div class="feed-tabs">
-        <button class="feed-tabs__link active" data-filter="foryou">لك</button>
-        <button class="feed-tabs__link" data-filter="following">الاشتراكات</button>
-        <button class="feed-tabs__link" data-filter="worlds">العوالم</button>
-        <button class="feed-tabs__link" data-filter="recent">الأحدث</button>
-        <button class="feed-tabs__filter" title="فلترة">${tabs-filter}</button>
-      </div>
-      <div id="feedRoot"></div>
-    </div>
-  </main>
-
-  <!-- ===== Left column: discover ===== -->
-  <aside class="col-left col-sticky">
-    <div class="card rail-panel">
-      <div class="panel-title">اكتشف المزيد من العوالم <a href="worlds.html">عرض الكل</a></div>
-      <div class="panel-body" id="discoverWorlds"></div>
-    </div>
-
-    <div class="card rail-panel">
-      <div class="panel-title">المواضيع الرائجة</div>
-      <div class="panel-body" id="trendsList"></div>
-    </div>
-
-    <div class="card rail-panel">
-      <div class="panel-title">أفضل الأعضاء <a href="members.html">عرض الترتيب</a></div>
-      <div class="panel-body" id="topMembers"></div>
-    </div>
-
-    <div class="card rail-panel">
-      <div class="panel-title">الأحداث القادمة <a href="events.html">عرض الكل</a></div>
-      <div class="panel-body" id="upcomingEvents"></div>
-    </div>
-  </aside>
-</div>
-
-<nav class="mobile-nav">
-  <a href="index.html" class="active">${m-home}<span>الرئيسية</span></a>
-  <a href="worlds.html">${m-globe}<span>العوالم</span></a>
-  <a href="reels.html">${m-reels}<span>الريلز</span></a>
-  <a href="messages.html">${m-msg}<span>الرسائل</span></a>
-  <a href="profile.html">${m-user}<span>حسابي</span></a>
-</nav>
-
-<!-- ===== Create post modal ===== -->
-<div class="modal-overlay" id="createPostModal">
-  <div class="modal">
-    <div class="modal__head">
-      <h3>إنشاء منشور</h3>
-      <button class="modal__close" data-close-modal>✕</button>
-    </div>
-    <div class="modal__body">
-      <div class="modal-author">
-        <img class="avatar" width="42" height="42" src="https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=200&auto=format&fit=crop" alt="">
-        <div>
-          <div class="modal-author__name">أنت</div>
-          <select id="worldSelect" style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:99px;padding:3px 10px;font-size:12px;color:var(--accent-2);font-weight:700;">
-          </select>
-        </div>
-      </div>
-      <textarea class="composer-text" id="postText" placeholder="بماذا تفكر؟ شارك أفكارك مع عالمك المفضّل..."></textarea>
-      <div id="mediaPreview" style="display:none;position:relative;margin-top:10px;border-radius:14px;overflow:hidden;border:1px solid var(--border-soft);">
-        <button type="button" id="removeMediaBtn" style="position:absolute;top:8px;left:8px;z-index:2;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;display:flex;align-items:center;justify-content:center;">✕</button>
-        <img id="mediaPreviewImg" style="width:100%;max-height:300px;object-fit:cover;display:none;">
-        <video id="mediaPreviewVideo" style="width:100%;max-height:300px;background:#000;display:none;" controls></video>
-      </div>
-      <input type="file" id="fileImage" accept="image/*" hidden>
-      <input type="file" id="fileVideo" accept="video/*" hidden>
-      <div class="attach-row">
-        <button type="button" class="attach-btn" title="صورة" id="attachImageBtn">${attach-image}</button>
-        <button type="button" class="attach-btn" title="فيديو" id="attachVideoBtn">${attach-video}</button>
-        <button type="button" class="attach-btn" title="استطلاع" id="attachPollBtn">${attach-poll}</button>
-        <button type="button" class="attach-btn" title="رابط" id="attachLinkBtn">🔗</button>
-      </div>
-    </div>
-    <div class="modal__foot">
-      <button class="btn btn-secondary" data-close-modal>إلغاء</button>
-      <button class="btn btn-primary" id="submitPost">نشر</button>
-    </div>
-  </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="supabase.js"></script>
-<script src="auth-guard.js"></script>
-<script src="app.js"></script>
+<script src="assets/js/app.js"></script>
 <script>
-  // ---- inject icons ----
-  const iconMap = {
-    'ic-search':'search','ic-plus':'plus','ic-plus2':'plus','ic-bell':'bell','ic-msg':'messages',
-    'nav-home':'home','nav-reels':'reels','nav-messages':'messages','nav-bell':'bell','nav-globe':'globe',
-    'nav-dashboard':'dashboard','nav-user':'user','nav-more':'more',
-    'tool-image':'image','tool-video':'video','tool-globe':'globe','tool-poll':'poll','tabs-filter':'settings',
-    'attach-image':'image','attach-video':'video','attach-poll':'poll',
-    'm-home':'home','m-globe':'globe','m-reels':'reels','m-msg':'messages','m-user':'user',
-  };
-  document.body.innerHTML = document.body.innerHTML.replace(/\$\{([a-z0-9\-]+)\}/g, (_, key) => WH.ICONS[iconMap[key]] || '');
-
-  // ---- شريط القصص (Stories) ----
-  const storiesBar = document.getElementById('storiesBar');
-  const storyPeople = WH.PEOPLE.filter(p=>p.id!=='you');
-  storiesBar.innerHTML = `
-    <div class="story-item" id="addStoryBtn">
-      <div class="story-item__ring add"><button class="story-item__add-btn">+</button></div>
-      <div class="story-item__name">إضافة قصة</div>
+function postCard(p){
+  return `
+  <div class="post">
+    <div class="post-head">
+      <img class="avatar" src="https://i.pravatar.cc/80?u=${p.handle}" style="width:40px;height:40px">
+      <div>
+        <div class="u-name">${p.author} <span class="badge-world">${p.world}</span></div>
+        <div class="u-meta">${p.handle} · ${p.time}</div>
+      </div>
+      <span class="more">⋯</span>
     </div>
-    ${storyPeople.map((p,i)=>`
-      <div class="story-item" data-story="${i}">
-        <div class="story-item__ring">${WH.avatarHTML(p,55)}</div>
-        <div class="story-item__name truncate">${p.name.split(' ')[0]}</div>
-      </div>`).join('')}`;
-
-  document.getElementById('addStoryBtn').addEventListener('click', ()=> WH.toast('إضافة القصص قادمة قريباً 📸'));
-
-  const storyViewer = document.createElement('div');
-  storyViewer.className = 'modal-overlay';
-  storyViewer.id = 'storyViewer';
-  storyViewer.innerHTML = `<div style="position:relative;width:100%;max-width:400px;height:88vh;border-radius:18px;overflow:hidden;display:flex;align-items:flex-end;">
-    <div id="storyBg" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:120px;"></div>
-    <div style="position:absolute;top:14px;inset-inline:14px;display:flex;align-items:center;gap:10px;z-index:2;">
-      <div id="storyAvatar"></div>
-      <div style="color:#fff;font-weight:800;font-size:14px;" id="storyName"></div>
-      <button id="storyCloseBtn" style="margin-inline-start:auto;color:#fff;font-size:20px;">✕</button>
+    <div class="post-text">${p.text}</div>
+    ${p.code ? `<div class="code-card">${p.code}</div>` : ''}
+    ${p.highlight ? `<div class="highlight-card">JS</div>` : ''}
+    <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span>${p.comments} commentaires · ${p.shares} partages</span></div>
+    <div class="post-actions">
+      <div class="a-btn" data-like><span>🤍</span> J’aime <span class="count">${p.likes}</span></div>
+      <div class="a-btn">💬 Commenter</div>
+      <div class="a-btn">🔄 Partager</div>
     </div>
-    <button id="storyPrevZone" style="position:absolute;inset-block:0;inset-inline-start:0;width:35%;"></button>
-    <button id="storyNextZone" style="position:absolute;inset-block:0;inset-inline-end:0;width:35%;"></button>
   </div>`;
-  document.body.appendChild(storyViewer);
-  const storyModal = WH.initModal('storyViewer');
+}
 
-  let storyIdx = 0;
-  function openStory(i){
-    storyIdx = i;
-    const p = storyPeople[storyIdx];
-    document.getElementById('storyBg').style.background = p.color;
-    document.getElementById('storyBg').textContent = p.avatar;
-    document.getElementById('storyAvatar').innerHTML = WH.avatarHTML(p, 34);
-    document.getElementById('storyName').textContent = p.name;
-    storyModal.open();
-  }
-  storiesBar.querySelectorAll('[data-story]').forEach(el=>{
-    el.addEventListener('click', ()=> openStory(Number(el.dataset.story)));
-  });
-  document.getElementById('storyCloseBtn').addEventListener('click', storyModal.close);
-  document.getElementById('storyPrevZone').addEventListener('click', ()=> openStory((storyIdx - 1 + storyPeople.length) % storyPeople.length));
-  document.getElementById('storyNextZone').addEventListener('click', ()=> openStory((storyIdx + 1) % storyPeople.length));
+function composer(){
+  return `
+  <div class="card composer">
+    <div class="composer-top">
+      <img class="avatar" src="${MOCK.user.avatar}" style="width:42px;height:42px">
+      <div class="fake-input" onclick="location.href='create-post.html'">Quoi de neuf dans votre monde ?</div>
+    </div>
+    <div class="composer-actions">
+      <div class="chip blue" onclick="location.href='create-post.html'">🖼️ Image</div>
+      <div class="chip pink" onclick="location.href='create-post.html'">🎬 Vidéo</div>
+      <div class="chip" onclick="location.href='create-post.html'">🌍 Monde</div>
+      <div class="chip green" onclick="location.href='create-post.html'">📊 Sondage</div>
+      <div class="spacer"></div>
+      <button class="btn btn-primary btn-sm" onclick="location.href='create-post.html'">Publier</button>
+    </div>
+  </div>`;
+}
 
-  // ---- render feed ----
-  const feedRoot = document.getElementById('feedRoot');
-  WH.renderFeed(feedRoot, 'foryou');
-  document.querySelectorAll('.feed-tabs__link').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      document.querySelectorAll('.feed-tabs__link').forEach(b=>b.classList.remove('active'));
-      btn.classList.add('active');
-      WH.renderFeed(feedRoot, btn.dataset.filter);
-    });
-  });
-
-  // ---- my worlds (sidebar) ----
-  const myWorldsNav = document.getElementById('myWorldsNav');
-  const defaultJoined = ['programming','ai','design'];
-  defaultJoined.forEach(id=>{ if(!(id in WH.state.joined)) WH.state.joined[id] = true; });
-  WH.save();
-  function renderMyWorldsNav(){
-    myWorldsNav.innerHTML = WH.WORLDS.filter(w=>WH.state.joined[w.id]).map(w=>`
-      <a href="world.html?id=${w.id}" class="nav__world">
-        <span class="nav__world-icon" style="background:${w.color}22;color:${w.color}">${w.icon}</span>
-        <span>${w.name}</span>
-      </a>`).join('');
-  }
-  renderMyWorldsNav();
-
-  // ---- discover worlds ----
-  document.getElementById('discoverWorlds').innerHTML = WH.WORLDS.slice(0,7).map(w=>`
-    <div class="discover-item">
-      <div class="discover-item__icon" style="background:${w.color}22;color:${w.color}">${w.icon}</div>
-      <div>
-        <div class="discover-item__name">${w.name}</div>
-        <div class="discover-item__meta">${WH.fmt(w.members)} عضو</div>
+async function render(){
+  const posts = await api.getFeed();
+  const mainHTML = `
+    <div class="main-col">
+      ${composer()}
+      <div class="card">
+        <div class="tabs">
+          <div class="tab active">Pour vous</div>
+          <div class="tab">Abonnements</div>
+          <div class="tab">Mondes</div>
+          <div class="tab">Plus récent ▾</div>
+        </div>
+        ${posts.map(postCard).join('')}
       </div>
-      <button class="btn btn-sm ${WH.state.joined[w.id]?'btn-secondary':'btn-outline'} join-btn" data-world="${w.id}">${WH.state.joined[w.id]?'منضم':'انضمام'}</button>
-    </div>`).join('');
-  document.getElementById('discoverWorlds').addEventListener('click', (e)=>{
-    const btn = e.target.closest('.join-btn'); if(!btn) return;
-    const id = btn.dataset.world;
-    WH.state.joined[id] = !WH.state.joined[id]; WH.save();
-    btn.textContent = WH.state.joined[id] ? 'منضم' : 'انضمام';
-    btn.classList.toggle('btn-secondary', WH.state.joined[id]);
-    btn.classList.toggle('btn-outline', !WH.state.joined[id]);
-    renderMyWorldsNav();
-    WH.toast(WH.state.joined[id] ? `انضممت إلى عالم ${WH.world(id).name}` : `غادرت عالم ${WH.world(id).name}`);
-  });
-
-  // ---- trends ----
-  document.getElementById('trendsList').innerHTML = WH.TRENDS.map(t=>`<div class="trend-item"><a href="#">${t}</a></div>`).join('') + `<div class="trend-item"><a href="#">عرض المزيد</a></div>`;
-
-  // ---- top members ----
-  const ranked = [...WH.PEOPLE].filter(p=>p.id!=='you').sort((a,b)=>b.points-a.points);
-  document.getElementById('topMembers').innerHTML = ranked.map((p,i)=>`
-    <div class="member-item">
-      <div class="member-item__rank">${i+1}</div>
-      ${WH.avatarHTML(p,30)}
-      <div class="member-item__name">${p.name}</div>
-      <div class="member-item__pts">${WH.fmt(p.points)} نقطة</div>
-    </div>`).join('');
-
-  // ---- events ----
-  document.getElementById('upcomingEvents').innerHTML = WH.EVENTS.map(e=>`
-    <div class="event-item">
-      <div class="event-item__date">${e.date.m}<b>${e.date.d}</b></div>
-      <div>
-        <div class="event-item__title">${e.title}</div>
-        <div class="event-item__meta">${e.place} · ${e.people}</div>
-      </div>
-    </div>`).join('');
-
-  // ---- world select in modal ----
-  const worldSelect = document.getElementById('worldSelect');
-  worldSelect.innerHTML = WH.WORLDS.map(w=>`<option value="${w.id}">${w.icon} ${w.name}</option>`).join('');
-
-  // ---- modal wiring ----
-  const modal = WH.initModal('createPostModal');
-  ['btnCreateTop','btnCreateSide','composerOpen'].forEach(id=>{
-    document.getElementById(id).addEventListener('click', modal.open);
-  });
-  document.getElementById('composerSubmitTop').addEventListener('click', modal.open);
-  // أزرار أدوات شريط الإنشاء السريع (صورة/فيديو/عالم/استطلاع) كانت بدون أي وظيفة — الآن تفتح نافذة الإنشاء
-  ['toolImage','toolVideo','toolWorld','toolPoll'].forEach(id=>{
-    document.getElementById(id).addEventListener('click', modal.open);
-  });
-
-  // ---- إرفاق صورة / فيديو ----
-  let selectedFile = null; // { file, kind: 'image'|'video' }
-  const mediaPreview = document.getElementById('mediaPreview');
-  const mediaPreviewImg = document.getElementById('mediaPreviewImg');
-  const mediaPreviewVideo = document.getElementById('mediaPreviewVideo');
-
-  function resetMediaPreview(){
-    selectedFile = null;
-    mediaPreview.style.display = 'none';
-    mediaPreviewImg.style.display = 'none'; mediaPreviewImg.src = '';
-    mediaPreviewVideo.style.display = 'none'; mediaPreviewVideo.src = '';
-    document.getElementById('fileImage').value = '';
-    document.getElementById('fileVideo').value = '';
-  }
-
-  document.getElementById('attachImageBtn').addEventListener('click', ()=>{
-    if(!WH.isLive()){ WH.toast('رفع الصور يتطلب اتصالاً حقيقياً بـ Supabase (وضع تجريبي حالياً)'); return; }
-    document.getElementById('fileImage').click();
-  });
-  document.getElementById('attachVideoBtn').addEventListener('click', ()=>{
-    if(!WH.isLive()){ WH.toast('رفع الفيديو يتطلب اتصالاً حقيقياً بـ Supabase (وضع تجريبي حالياً)'); return; }
-    document.getElementById('fileVideo').click();
-  });
-  document.getElementById('attachPollBtn').addEventListener('click', ()=> WH.toast('ميزة الاستطلاعات قادمة قريباً 📊'));
-  document.getElementById('attachLinkBtn').addEventListener('click', ()=> WH.toast('يمكنك لصق الرابط مباشرة داخل نص المنشور حالياً 🔗'));
-
-  document.getElementById('fileImage').addEventListener('change', (e)=>{
-    const file = e.target.files[0]; if(!file) return;
-    selectedFile = { file, kind:'image' };
-    mediaPreview.style.display = 'block';
-    mediaPreviewVideo.style.display = 'none';
-    mediaPreviewImg.style.display = 'block';
-    mediaPreviewImg.src = URL.createObjectURL(file);
-  });
-  document.getElementById('fileVideo').addEventListener('change', (e)=>{
-    const file = e.target.files[0]; if(!file) return;
-    selectedFile = { file, kind:'video' };
-    mediaPreview.style.display = 'block';
-    mediaPreviewImg.style.display = 'none';
-    mediaPreviewVideo.style.display = 'block';
-    mediaPreviewVideo.src = URL.createObjectURL(file);
-  });
-  document.getElementById('removeMediaBtn').addEventListener('click', resetMediaPreview);
-
-  document.getElementById('submitPost').addEventListener('click', async ()=>{
-    const text = document.getElementById('postText').value.trim();
-    if(!text){ WH.toast('اكتب شيئاً أولاً ✍️'); return; }
-    const btn = document.getElementById('submitPost');
-    let imageUrl = null, videoUrl = null;
-
-    if(selectedFile && WH.isLive()){
-      btn.disabled = true; btn.textContent = 'جارٍ رفع الملف...';
-      try{
-        const url = await DB.uploadPostMedia(selectedFile.file);
-        if(selectedFile.kind === 'image') imageUrl = url; else videoUrl = url;
-      }catch(err){
-        WH.toast('تعذر رفع الملف: ' + err.message);
-        btn.disabled = false; btn.textContent = 'نشر';
-        return;
-      }
-    }
-
-    btn.textContent = 'جارٍ النشر...';
-    WH.addPost({ text, world: worldSelect.value, imageUrl, videoUrl });
-    document.getElementById('postText').value='';
-    resetMediaPreview();
-    btn.disabled = false; btn.textContent = 'نشر';
-    modal.close();
-    WH.renderFeed(feedRoot, 'foryou');
-    document.querySelectorAll('.feed-tabs__link').forEach(b=>b.classList.remove('active'));
-    document.querySelector('.feed-tabs__link[data-filter="foryou"]').classList.add('active');
-    WH.toast('تم نشر منشورك بنجاح ✓');
-  });
+    </div>`;
+  initLayout({ active:'home', mainHTML });
+}
+render();
 </script>
 </body>
 </html>

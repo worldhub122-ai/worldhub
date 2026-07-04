@@ -1,131 +1,83 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="fr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WorldHub — العالم</title>
-<link rel="stylesheet" href="main.css">
-<link rel="stylesheet" href="sidebar.css">
-<link rel="stylesheet" href="tabs.css">
-<style>
-  .world-cover{ height:170px; border-radius:var(--radius-lg); position:relative; overflow:hidden; display:flex; align-items:flex-end; padding:22px; }
-  .world-head{ display:flex; align-items:center; gap:16px; padding:20px 22px; }
-  .world-head__icon{ width:64px; height:64px; border-radius:18px; display:flex; align-items:center; justify-content:center; font-size:30px; flex-shrink:0; margin-top:-46px; border:4px solid var(--bg-card); }
-  .world-head__name{ font-family:var(--font-display); font-weight:900; font-size:21px; }
-  .world-head__desc{ color:var(--text-dim); font-size:13.5px; margin-top:3px; max-width:520px; }
-  .world-stats-row{ display:flex; gap:22px; padding:0 22px 18px; flex-wrap:wrap; }
-  .world-stats-row b{ font-family:var(--font-display); font-size:16px; }
-  .world-stats-row span{ color:var(--text-faint); font-size:12px; }
-  .world-actions{ margin-inline-start:auto; display:flex; gap:10px; padding:0 22px 18px; }
-  .not-found{ text-align:center; padding:70px 20px; }
-  .not-found .icon{ font-size:44px; margin-bottom:14px; }
-</style>
+<title>WorldHub — Programmation</title>
+<link rel="stylesheet" href="assets/css/main.css">
 </head>
-<body data-page="worlds">
+<body>
+<div id="topbar-slot"></div>
+<div id="shell-slot"></div>
 
-<header class="topbar">
-  <a href="index.html" class="brand"><div class="brand__mark">🌍</div><div class="brand__name">World<span>Hub</span></div></a>
-  <div class="topbar__search"><span id="ic-search"></span><input type="text" placeholder="ابحث..."><span class="kbd">⌘K</span></div>
-  <div class="topbar__actions">
-    <a href="notifications.html" class="icon-btn"><span class="badge">8</span><span id="ic-bell"></span></a>
-    <a href="messages.html" class="icon-btn"><span class="badge">3</span><span id="ic-msg"></span></a>
-    <a href="profile.html"><img class="avatar" width="40" height="40" src="https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=200&auto=format&fit=crop"></a>
-  </div>
-</header>
-
-<div class="layout layout--narrow">
-  <aside class="col-right col-sticky">
-    <nav class="nav">
-      <a href="index.html" class="nav__link" data-page="home">${nav-home}<span>الرئيسية</span></a>
-      <a href="reels.html" class="nav__link" data-page="reels">${nav-reels}<span>الريلز</span></a>
-      <a href="messages.html" class="nav__link" data-page="messages">${nav-messages}<span>الرسائل</span></a>
-      <a href="notifications.html" class="nav__link" data-page="notifications">${nav-bell}<span>الإشعارات</span></a>
-      <a href="worlds.html" class="nav__link" data-page="worlds">${nav-globe}<span>العوالم</span></a>
-      <a href="dashboard.html" class="nav__link" data-page="dashboard">${nav-dashboard}<span>لوحة المعلومات</span></a>
-      <a href="profile.html" class="nav__link" data-page="profile">${nav-user}<span>الملف الشخصي</span></a>
-    </nav>
-  </aside>
-
-  <main class="col-center" style="max-width:900px;" id="worldMain">
-    <!-- يُملأ عبر JavaScript بناءً على ?id= -->
-  </main>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="supabase.js"></script>
-<script src="auth-guard.js"></script>
-<script src="app.js"></script>
+<script src="assets/js/app.js"></script>
 <script>
-  const iconMap = {'ic-search':'search','ic-bell':'bell','ic-msg':'messages','nav-home':'home','nav-reels':'reels','nav-messages':'messages','nav-bell':'bell','nav-globe':'globe','nav-dashboard':'dashboard','nav-user':'user'};
-  document.body.innerHTML = document.body.innerHTML.replace(/\$\{([a-z0-9\-]+)\}/g, (_, key) => WH.ICONS[iconMap[key]] || '');
+function worldRail(){
+  return `
+  <div class="card card-pad">
+    <h3 style="margin:0 0 12px;font-size:15px">À propos</h3>
+    <p style="font-size:13.5px;color:var(--text-2);line-height:1.6">Un espace pour les développeurs de tous niveaux. Partagez du code, posez des questions et progressez ensemble.</p>
+    <div class="row" style="padding:8px 0"><span>📁</span>&nbsp; Catégorie: Programmation</div>
+    <div class="row" style="padding:8px 0"><span>📅</span>&nbsp; Créé le 15 janv. 2024</div>
+    <div class="row" style="padding:8px 0"><span>🌐</span>&nbsp; Français</div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Ressources populaires</h3></div>
+    <div class="row"><div><div class="row-title">JavaScript Roadmap</div><div class="row-sub">Guide complet</div></div></div>
+    <div class="row"><div><div class="row-title">React Documentation officielle</div><div class="row-sub">Référence</div></div></div>
+    <div class="row"><div><div class="row-title">Node.js Best Practices</div><div class="row-sub">Guide</div></div></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Admins</h3></div>
+    ${MOCK.topMembers.slice(0,2).map(m=>`
+      <div class="row"><img class="avatar" src="${m.avatar}" style="width:34px;height:34px"><div><div class="row-title">${m.name}</div><div class="row-sub">${m.meta.includes('@')?m.meta:'@'+m.name.toLowerCase().replace(' ','.')}</div></div></div>`).join('')}
+  </div>`;
+}
 
-  const params = new URLSearchParams(location.search);
-  const worldId = params.get('id');
-  const w = worldId ? WH.world(worldId) : null;
-  const main = document.getElementById('worldMain');
-
-  if(!w){
-    main.innerHTML = `
-      <div class="card not-found">
-        <div class="icon">🌌</div>
-        <div class="fw-800" style="font-size:17px;">هذا العالم غير موجود</div>
-        <div class="text-dim mt-8">تأكد من الرابط، أو تصفّح كل العوالم المتاحة.</div>
-        <a href="worlds.html" class="btn btn-primary mt-16" style="display:inline-flex;">تصفّح العوالم</a>
-      </div>`;
-  } else {
-    document.title = 'WorldHub — ' + w.name;
-    renderWorld();
-  }
-
-  function renderWorld(){
-    const joined = !!WH.state.joined[w.id];
-    main.innerHTML = `
-      <div class="card">
-        <div class="world-cover" style="background:linear-gradient(160deg, ${w.color}33, #f5f3ff 75%);">
-          <div class="pill-tag">${w.icon} ${w.name}</div>
+function mainWorld(){
+  return `
+  <div class="main-col">
+    <div class="world-cover">
+      <div class="glyph-lg">💻</div>
+      <div>
+        <div style="font-size:24px;font-weight:800">Programmation</div>
+        <div style="color:var(--text-2);font-size:13.5px;margin:4px 0 14px">12.3k Membres · 🌍 Public</div>
+        <p style="color:var(--text-2);font-size:13.5px;max-width:520px;margin:0 0 14px">Partagez vos connaissances, posez vos questions et progressez ensemble dans l’univers du code.</p>
+        <button class="btn btn-primary">Rejoindre</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="tabs">
+        <div class="tab active">Publications</div>
+        <div class="tab">Membres</div>
+        <div class="tab">Événements</div>
+        <div class="tab">Ressources</div>
+      </div>
+      <div class="composer">
+        <div class="composer-top">
+          <img class="avatar" src="${MOCK.user.avatar}" style="width:38px;height:38px">
+          <div class="fake-input">Quoi de neuf dans Programmation ?</div>
         </div>
-        <div class="world-head">
-          <div class="world-head__icon" style="background:${w.color}22;color:${w.color}">${w.icon}</div>
-          <div>
-            <div class="world-head__name">${w.name}</div>
-            <div class="world-head__desc">${w.desc}</div>
-          </div>
-        </div>
-        <div class="flex">
-          <div class="world-stats-row">
-            <div><b>${WH.fmt(w.members)}</b><br><span>عضو</span></div>
-            <div><b>${WH.fmt(w.posts)}</b><br><span>منشور</span></div>
-            <div><b>${w.jobs}</b><br><span>وظيفة</span></div>
-          </div>
-          <div class="world-actions">
-            <button class="btn ${joined?'btn-secondary':'btn-primary'}" id="worldJoinBtn">${joined?'✓ منضم':'انضمام إلى العالم'}</button>
-          </div>
+        <div class="composer-actions">
+          <div class="chip blue">🖼️ Image</div><div class="chip">🎬 Vidéo</div><div class="chip green">📊 Sondage</div>
+          <div class="spacer"></div><button class="btn btn-primary btn-sm">Publier</button>
         </div>
       </div>
-
-      <div class="card mt-16">
-        <div class="feed-tabs">
-          <button class="feed-tabs__link active">منشورات العالم</button>
-        </div>
-        <div id="feedRoot"></div>
-      </div>`;
-
-    document.getElementById('worldJoinBtn').addEventListener('click', ()=>{
-      WH.state.joined[w.id] = !WH.state.joined[w.id]; WH.save();
-      WH.toast(WH.state.joined[w.id] ? `انضممت إلى عالم ${w.name} 🎉` : 'تمت مغادرة العالم');
-      renderWorld();
-    });
-
-    const feedRoot = document.getElementById('feedRoot');
-    if(WH.isLive()){
-      WH.renderFeed(feedRoot, 'foryou'); // TODO: فلترة حسب world_id عند الاتصال الحقيقي بقاعدة البيانات
-    } else {
-      const posts = WH.state.posts.filter(p=>p.world===w.id);
-      feedRoot.innerHTML = posts.length ? posts.map(WH.postCardHTML).join('') :
-        `<div class="empty-state"><div class="icon">📝</div>لا توجد منشورات في هذا العالم بعد</div>`;
-      WH.bindPostEvents(feedRoot);
-    }
-  }
+      ${MOCK.posts.filter(p=>p.world==='Programmation').map(p=>`
+        <div class="post">
+          <div class="post-head">
+            <img class="avatar" src="https://i.pravatar.cc/80?u=${p.handle}" style="width:40px;height:40px">
+            <div><div class="u-name">${p.author}</div><div class="u-meta">${p.time}</div></div>
+            <span class="more">⋯</span>
+          </div>
+          <div class="post-text">${p.text}</div>
+          ${p.code?`<div class="code-card">${p.code}</div>`:''}
+          <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span>${p.comments} commentaires</span></div>
+        </div>`).join('')}
+    </div>
+  </div>`;
+}
+initLayout({ active:'programming', mainHTML: mainWorld(), rail: worldRail() });
 </script>
 </body>
 </html>
