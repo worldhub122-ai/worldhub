@@ -285,6 +285,20 @@ async function handlePublish(){
 }
 initLayout({ active:'create', mainHTML: mainCreate(), rail: previewCard() });
 
+/* Ces fonctions sont appelées depuis des attributs onclick/onchange
+   inline dans le HTML généré ci-dessus. Ces attributs s'exécutent dans
+   le scope global (window), alors que les fonctions ci-dessus sont
+   déclarées à l'intérieur de cette IIFE async — donc invisibles depuis
+   l'extérieur tant qu'on ne les expose pas explicitement sur window.
+   (Bug: "handlePublish is not defined" au clic sur "Publier".) */
+window.togglePoll = togglePoll;
+window.removePoll = removePoll;
+window.addPollOption = addPollOption;
+window.handleImageSelect = handleImageSelect;
+window.handleVideoSelect = handleVideoSelect;
+window.toggleAiSuggestions = toggleAiSuggestions;
+window.handlePublish = handlePublish;
+
 })();
 </script>
 </body>
