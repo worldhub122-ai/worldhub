@@ -63,12 +63,12 @@ function shellHTML(active, thread){
           <div style="position:relative"><img class="avatar" src="${active.avatar}" style="width:38px;height:38px"><span class="online-dot" style="position:absolute;bottom:0;right:0"></span></div>
           <div><div style="font-weight:700;font-size:14.5px">${escapeHtml(active.name)}</div><div style="font-size:12px;color:var(--green)">En ligne</div></div>
           <div style="margin-left:auto;display:flex;gap:8px">
-            <span class="icon-btn">📞</span><span class="icon-btn">🎥</span><span class="icon-btn">ℹ️</span>
+            <span class="icon-btn" onclick="handleCallAction('audio')">📞</span><span class="icon-btn" onclick="handleCallAction('video')">🎥</span><span class="icon-btn" onclick="toggleChatInfo()">ℹ️</span>
           </div>
         </div>
         <div class="chat-body" id="chatBody">${chatBubbles(thread)}</div>
         <div class="chat-input-bar">
-          <span class="icon-btn">📎</span>
+          <span class="icon-btn" onclick="handleAttachFile()">📎</span>
           <input id="msgInput" placeholder="Écrivez votre message..." onkeydown="if(event.key==='Enter') sendCurrentMessage()">
           <button class="btn btn-primary btn-sm" onclick="sendCurrentMessage()">Envoyer</button>
         </div>
@@ -96,6 +96,20 @@ async function openConversation(otherId){
   if (!active) return;
   const thread = await api.getMessages(active.otherId);
   initLayout({ active:'messages', mainHTML: shellHTML(active, thread), noRail:true, wide:true });
+}
+
+/* Calls, file attachments (Issues: 📞/🎥/📎 had no click handler and did
+   nothing — they now give honest feedback instead of looking broken). */
+function handleCallAction(kind){
+  showToast(kind === 'video' ? "L'appel vidéo n'est pas encore disponible." : "L'appel audio n'est pas encore disponible.", 'info');
+}
+function handleAttachFile(){
+  showToast("L'envoi de fichiers dans les messages arrive bientôt.", 'info');
+}
+/* Toggle the "info" side panel — mainly useful on narrower screens
+   where CSS hides it by default (Issue: ℹ️ had no click handler). */
+function toggleChatInfo(){
+  document.querySelector('.chat-info')?.classList.toggle('force-visible');
 }
 
 async function sendCurrentMessage(){

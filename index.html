@@ -29,14 +29,82 @@ function postCard(p){
     <div class="post-text">${escapeHtml(p.text)}</div>
     ${p.code ? `<div class="code-card">${p.code}</div>` : ''}
     ${p.highlight ? `<div class="highlight-card">JS</div>` : ''}
-    <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span>${p.comments} commentaires · ${p.shares} partages</span></div>
+    <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span class="comments-count">${p.comments} commentaires · ${p.shares} partages</span></div>
     <div class="post-actions">
       <div class="a-btn" data-like data-post-id="${p.id || ''}"><span>🤍</span> J’aime <span class="count">${p.likes}</span></div>
-      <div class="a-btn" onclick="location.href='create-post.html'">💬 Commenter</div>
-      <div class="a-btn">🔄 Partager</div>
+      <div class="a-btn" onclick="toggleCommentBox('${p.id || ''}')">💬 Commenter</div>
+      <div class="a-btn" onclick="handleShare('${p.id || ''}')">🔄 Partager</div>
+    </div>
+    <div class="comment-box" id="cbox-${p.id || ''}" hidden style="display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--border-soft)">
+      <img class="avatar" src="${MOCK.user.avatar}" style="width:28px;height:28px;flex:none">
+      <input type="text" placeholder="Écrire un commentaire..." id="cinput-${p.id || ''}" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-pill);padding:8px 14px;color:var(--text-1);font-size:13.5px" onkeydown="if(event.key==='Enter') submitComment('${p.id || ''}')">
+      <button class="btn btn-primary btn-sm" onclick="submitComment('${p.id || ''}')">Envoyer</button>
     </div>
     ${renderCommentPreview(p)}
   </div>`;
+}
+
+/* Reveal/hide the inline reply box under a post, then focus it
+   (Issue: "Commenter" only ever redirected to create-post.html,
+   there was no way to actually leave a reply on a post). */
+function toggleCommentBox(postId){
+  const box = document.getElementById('cbox-' + postId);
+  if (!box) return;
+  box.hidden = !box.hidden;
+  if (!box.hidden) document.getElementById('cinput-' + postId)?.focus();
+}
+
+async function submitComment(postId){
+  const input = document.getElementById('cinput-' + postId);
+  const text = input?.value.trim();
+  if (!text) return;
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    const session = await DB.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+  }
+  input.disabled = true;
+  try {
+    const comment = await api.addComment(postId, text);
+    input.value = '';
+    /* Append the new comment to the preview list right away instead of
+       waiting for a full page reload. */
+    const post = document.querySelector(`[data-post-id="${postId}"]`)?.closest('.post');
+    let previewEl = post?.querySelector('.comment-preview');
+    const rowHTML = `
+      <div style="display:flex;gap:8px;margin-bottom:8px;font-size:13px">
+        <img class="avatar" src="${MOCK.user.avatar}" style="width:26px;height:26px;flex:none">
+        <div><b>${escapeHtml(MOCK.user.name)}</b>
+        <span style="color:var(--text-2)">${escapeHtml(text)}</span></div>
+      </div>`;
+    if (previewEl) {
+      previewEl.insertAdjacentHTML('afterbegin', rowHTML);
+    } else if (post) {
+      const box = post.querySelector('.comment-box');
+      box.insertAdjacentHTML('afterend', `<div class="comment-preview" style="padding:10px 16px 4px;border-top:1px solid var(--border-soft)">${rowHTML}</div>`);
+    }
+    const countEl = post?.querySelector('.comments-count');
+    if (countEl) {
+      const n = (parseInt(countEl.textContent.replace(/\D/g, '')) || 0) + 1;
+      const parts = countEl.textContent.split('·');
+      countEl.textContent = `${n} commentaires · ${(parts[1] || '').trim()}`;
+    }
+  } catch (err) {
+    showError(err);
+  } finally {
+    input.disabled = false;
+  }
+}
+
+/* Share = copy a link to this post to the clipboard (Issue: the share
+   button had no click handler and did nothing at all). */
+async function handleShare(postId){
+  const url = `${location.origin}${location.pathname}?post=${encodeURIComponent(postId)}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast('Lien copié dans le presse-papiers ✓', 'success');
+  } catch (err) {
+    showToast(url, 'info');
+  }
 }
 
 /* Show up to 2 real comments under a post (Issue: comments never rendered before) */

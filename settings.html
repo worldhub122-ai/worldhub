@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorldHub — Paramètres</title>
+<link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div id="topbar-slot"></div>
+<div id="shell-slot"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/supabase.js"></script>
+<script src="assets/js/auth-guard.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+(async function() {
+  const _session = await requireAuth();
+  if (!_session) return;
+
+/* Simple local preference store (Issue: notifications.html linked to a
+   "Paramètres" page that didn't exist at all). These preferences are
+   cosmetic/local only — there's no `settings` table in the schema yet,
+   so nothing here is silently pretending to sync to the server. */
+const PREF_KEY = 'wh_notification_prefs';
+function loadPrefs(){
+  try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; }
+  catch { return {}; }
+}
+function savePrefs(prefs){
+  localStorage.setItem(PREF_KEY, JSON.stringify(prefs));
+}
+
+function toggleRow(id, label, checked){
+  return `
+  <div class="row" style="padding:12px 0;justify-content:space-between">
+    <span style="font-size:13.5px;color:var(--text-1)">${label}</span>
+    <label class="switch" style="position:relative;display:inline-block;width:40px;height:22px">
+      <input type="checkbox" id="${id}" ${checked?'checked':''} onchange="onPrefChange()" style="opacity:0;width:0;height:0">
+      <span id="${id}-track" style="position:absolute;inset:0;background:${checked?'var(--accent)':'var(--surface-3)'};border-radius:999px;cursor:pointer;transition:.15s" onclick="document.getElementById('${id}').click()"></span>
+      <span id="${id}-knob" style="position:absolute;top:3px;left:${checked?'21px':'3px'};width:16px;height:16px;background:#fff;border-radius:50%;transition:.15s;pointer-events:none"></span>
+    </label>
+  </div>`;
+}
+
+function onPrefChange(){
+  const prefs = {
+    email: document.getElementById('prefEmail').checked,
+    push: document.getElementById('prefPush').checked,
+    likes: document.getElementById('prefLikes').checked,
+    comments: document.getElementById('prefComments').checked,
+    privatize: document.getElementById('prefPrivate').checked,
+  };
+  Object.entries(prefs).forEach(([k, v]) => {
+    const idMap = { email:'prefEmail', push:'prefPush', likes:'prefLikes', comments:'prefComments', privatize:'prefPrivate' };
+    const track = document.getElementById(idMap[k] + '-track');
+    const knob = document.getElementById(idMap[k] + '-knob');
+    if (track) track.style.background = v ? 'var(--accent)' : 'var(--surface-3)';
+    if (knob) knob.style.left = v ? '21px' : '3px';
+  });
+  savePrefs(prefs);
+  showToast('Préférences enregistrées ✓', 'success');
+}
+
+function mainSettings(profile){
+  const prefs = Object.assign({ email:true, push:true, likes:true, comments:true, privatize:false }, loadPrefs());
+  return `
+  <div class="main-col">
+    <div class="card card-pad">
+      <div style="font-size:19px;font-weight:800;margin-bottom:4px">Paramètres</div>
+      <div style="color:var(--text-3);font-size:13px">Gérez votre compte et vos préférences de notification.</div>
+    </div>
+
+    <div class="card card-pad">
+      <h3 style="margin:0 0 12px;font-size:15px">Compte</h3>
+      <div class="row" style="padding:8px 0">
+        <img class="avatar" src="${profile.avatar}" style="width:44px;height:44px">
+        <div><div class="row-title">${escapeHtml(profile.name)}</div><div class="row-sub">${escapeHtml(profile.handle)}</div></div>
+      </div>
+      <button class="btn btn-outline" style="margin-top:10px" onclick="location.href='profile.html'">Modifier le profil</button>
+    </div>
+
+    <div class="card card-pad">
+      <h3 style="margin:0 0 4px;font-size:15px">Notifications</h3>
+      <div style="color:var(--text-3);font-size:12.5px;margin-bottom:6px">Choisissez comment WorldHub vous informe de l'activité.</div>
+      ${toggleRow('prefEmail', 'Notifications par e-mail', prefs.email)}
+      ${toggleRow('prefPush', 'Notifications push', prefs.push)}
+      ${toggleRow('prefLikes', "M'avertir des j'aime", prefs.likes)}
+      ${toggleRow('prefComments', "M'avertir des commentaires", prefs.comments)}
+    </div>
+
+    <div class="card card-pad">
+      <h3 style="margin:0 0 4px;font-size:15px">Confidentialité</h3>
+      ${toggleRow('prefPrivate', 'Rendre mon profil privé', prefs.privatize)}
+    </div>
+
+    <div class="card card-pad">
+      <h3 style="margin:0 0 12px;font-size:15px">Session</h3>
+      <button class="btn btn-ghost" onclick="logout()">⏻ Se déconnecter</button>
+    </div>
+  </div>`;
+}
+
+async function render(){
+  const profile = await api.getCurrentProfile();
+  initLayout({ active:'profile', mainHTML: mainSettings(profile), noRail:true });
+}
+render();
+
+})();
+</script>
+</body>
+</html>

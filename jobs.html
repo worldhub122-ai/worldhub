@@ -39,10 +39,10 @@ async function jobsRail(){
   return `
   <div class="card card-pad">
     <h3 style="margin:0 0 12px;font-size:15px">Filtrer</h3>
-    <div class="field"><label>Type de contrat</label><select><option>Tous</option><option>CDI</option><option>Freelance</option><option>Stage</option></select></div>
-    <div class="field"><label>Lieu</label><select><option>Tous</option><option>Remote</option><option>Paris, FR</option><option>Lyon, FR</option></select></div>
-    <div class="field"><label>Monde</label><select><option>Tous</option>${MOCK.worlds.map(w=>`<option>${w.name}</option>`).join('')}</select></div>
-    <button class="btn btn-primary" style="width:100%">Appliquer</button>
+    <div class="field"><label>Type de contrat</label><select id="filterType"><option>Tous</option><option>CDI</option><option>Freelance</option><option>Stage</option></select></div>
+    <div class="field"><label>Lieu</label><select id="filterPlace"><option>Tous</option><option>Remote</option><option>Paris, FR</option><option>Lyon, FR</option></select></div>
+    <div class="field"><label>Monde</label><select id="filterWorld"><option>Tous</option>${MOCK.worlds.map(w=>`<option>${w.name}</option>`).join('')}</select></div>
+    <button class="btn btn-primary" style="width:100%" onclick="applyJobFilters()">Appliquer</button>
   </div>
   <div class="card">
     <div class="card-head"><h3>Top recruteurs</h3></div>
@@ -70,19 +70,97 @@ async function handleApply(btn){
   }
 }
 
+let _allJobs = [];
+
 function mainJobs(jobs){
   return `
   <div class="main-col">
     <div class="card card-pad" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-      <div><div style="font-size:19px;font-weight:800">Offres d’emploi</div><div style="color:var(--text-3);font-size:13px">${jobs.length} offres disponibles</div></div>
-      <button class="btn btn-primary">+ Publier une offre</button>
+      <div><div style="font-size:19px;font-weight:800">Offres d’emploi</div><div style="color:var(--text-3);font-size:13px" id="jobsCountLabel">${jobs.length} offres disponibles</div></div>
+      <button class="btn btn-primary" onclick="openCreateJobModal()">+ Publier une offre</button>
     </div>
-    ${jobs.length ? jobs.map(jobCard).join('') : `<div class="card card-pad" style="text-align:center;color:var(--text-3)">Aucune offre pour le moment.</div>`}
+    <div id="jobsListContainer">
+      ${jobs.length ? jobs.map(jobCard).join('') : `<div class="card card-pad" style="text-align:center;color:var(--text-3)">Aucune offre pour le moment.</div>`}
+    </div>
   </div>`;
+}
+
+/* Filter the already-loaded job list client-side (Issue: "Appliquer"
+   had no onclick and did nothing at all). */
+function applyJobFilters(){
+  const type  = document.getElementById('filterType').value;
+  const place = document.getElementById('filterPlace').value;
+  const world = document.getElementById('filterWorld').value;
+  const filtered = _allJobs.filter(j => {
+    if (type !== 'Tous' && j.type !== type) return false;
+    if (place !== 'Tous' && j.place !== place) return false;
+    if (world !== 'Tous' && j.tag !== world) return false;
+    return true;
+  });
+  const container = document.getElementById('jobsListContainer');
+  const label = document.getElementById('jobsCountLabel');
+  if (label) label.textContent = `${filtered.length} offres disponibles`;
+  if (container) {
+    container.innerHTML = filtered.length
+      ? filtered.map(jobCard).join('')
+      : `<div class="card card-pad" style="text-align:center;color:var(--text-3)">Aucune offre ne correspond à ces filtres.</div>`;
+  }
+}
+
+/* Create-job modal (Issue: DB.createJob already existed but nothing
+   in app.js/jobs.html exposed a way to call it). */
+async function openCreateJobModal(){
+  const companies = await api.getCompanies();
+  openModal(`
+    <h3 style="margin:0 0 16px">Publier une offre d'emploi</h3>
+    <div class="field"><label>Entreprise</label>
+      <select id="cjCompany">${companies.map(c=>`<option value="${c.id ?? ''}">${escapeHtml(c.name)}</option>`).join('') || '<option value="">Aucune entreprise disponible</option>'}</select>
+    </div>
+    <div class="field"><label>Titre du poste</label><input id="cjTitle" placeholder="ex: Développeur Frontend React"></div>
+    <div class="field"><label>Description</label><textarea id="cjDesc" rows="3" placeholder="Décrivez le poste"></textarea></div>
+    <div class="field"><label>Lieu</label><input id="cjLocation" placeholder="ex: Paris, FR"></div>
+    <div class="field"><label>Type de contrat</label>
+      <select id="cjType"><option>CDI</option><option>CDD</option><option>Freelance</option><option>Stage</option><option>Alternance</option></select>
+    </div>
+    <div class="field"><label>Monde</label><select id="cjWorld"><option value="">Aucun</option>${MOCK.worlds.map(w=>`<option value="${w.id}">${w.name}</option>`).join('')}</select></div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-2);margin-bottom:14px"><input type="checkbox" id="cjRemote"> Poste en télétravail (Remote)</label>
+    <div id="cjErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" id="cjSubmit" onclick="submitCreateJob()">Publier</button>
+    </div>`);
+}
+async function submitCreateJob(){
+  const companyId = document.getElementById('cjCompany').value;
+  const title = document.getElementById('cjTitle').value.trim();
+  const description = document.getElementById('cjDesc').value.trim();
+  const location = document.getElementById('cjLocation').value.trim();
+  const jobType = document.getElementById('cjType').value;
+  const worldId = document.getElementById('cjWorld').value || null;
+  const isRemote = document.getElementById('cjRemote').checked;
+  const errEl = document.getElementById('cjErr');
+  if (!title || !companyId){ errEl.textContent = 'Le titre et l\'entreprise sont requis.'; errEl.hidden = false; return; }
+  if (typeof DB !== 'undefined' && DB.isConnected){
+    const session = await DB.getSession();
+    if (!session){ window.location.href = 'login.html'; return; }
+  }
+  const btn = document.getElementById('cjSubmit');
+  btn.disabled = true; btn.textContent = 'Publication...';
+  try{
+    await api.createJob({ companyId, title, description, location, jobType, worldId, isRemote });
+    closeModal();
+    showToast('Offre publiée ✓', 'success');
+    render();
+  }catch(err){
+    errEl.textContent = err.message || 'Impossible de publier cette offre.';
+    errEl.hidden = false;
+    btn.disabled = false; btn.textContent = 'Publier';
+  }
 }
 
 async function render(){
   const [jobs, rail] = await Promise.all([api.getJobs(), jobsRail()]);
+  _allJobs = jobs;
   initLayout({ active:'jobs', mainHTML: mainJobs(jobs), rail });
 }
 render();

@@ -22,7 +22,7 @@ const DB = (() => {
   const isConnected = !!sbClient;
 
   function assertConnected(){
-    if(!isConnected) throw new Error('Supabase غير متصل. ضع SUPABASE_URL و SUPABASE_ANON_KEY في supabase.js');
+    if(!isConnected) throw new Error('Supabase n\'est pas connecté. Renseignez SUPABASE_URL et SUPABASE_ANON_KEY dans supabase.js.');
   }
 
   // ---------------- Auth ----------------
@@ -118,7 +118,7 @@ const DB = (() => {
   async function createPost({ content, worldId, imageUrl=null, videoUrl=null }){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول لإنشاء منشور');
+    if(!user) throw new Error('Vous devez être connecté(e) pour publier.');
     const { data, error } = await sbClient.from('posts')
       .insert({ author_id:user.id, content, world_id:worldId, image_url:imageUrl, video_url:videoUrl })
       .select().single();
@@ -147,7 +147,7 @@ const DB = (() => {
   async function uploadPostMedia(file){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول لرفع ملف');
+    if(!user) throw new Error('Vous devez être connecté(e) pour envoyer un fichier.');
     const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
     const path = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
     const { error: upErr } = await sbClient.storage.from('post-media').upload(path, file, {
@@ -164,7 +164,7 @@ const DB = (() => {
   async function uploadAvatar(file){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول لتغيير صورة البروفايل');
+    if(!user) throw new Error('Vous devez être connecté(e) pour changer votre photo de profil.');
     const oldProfile = await getProfile(user.id).catch(()=>null);
     const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
     const path = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
@@ -187,7 +187,7 @@ const DB = (() => {
   async function uploadCover(file){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول لتغيير صورة الغلاف');
+    if(!user) throw new Error('Vous devez être connecté(e) pour changer votre photo de couverture.');
     const oldProfile = await getProfile(user.id).catch(()=>null);
     const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
     const path = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
@@ -220,7 +220,7 @@ const DB = (() => {
   async function toggleSavePost(postId){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول للحفظ');
+    if(!user) throw new Error('Vous devez être connecté(e) pour enregistrer.');
     const { data: existing } = await sbClient.from('saved_posts').select('*').eq('post_id', postId).eq('user_id', user.id).maybeSingle();
     if(existing){
       await sbClient.from('saved_posts').delete().eq('post_id', postId).eq('user_id', user.id);
@@ -243,7 +243,7 @@ const DB = (() => {
   async function listSavedPosts(){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول');
+    if(!user) throw new Error('Vous devez être connecté(e).');
     const { data, error } = await sbClient
       .from('saved_posts')
       .select('created_at, post:posts(id, content, image_url, video_url, world_id, created_at, edited_at, author:profiles(id, first_name, last_name, handle, avatar_url), likes(user_id), comments(id, content, created_at, author:profiles(id, first_name, last_name, handle, avatar_url)))')
@@ -267,7 +267,7 @@ const DB = (() => {
   async function toggleLike(postId){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول للإعجاب بمنشور');
+    if(!user) throw new Error('Vous devez être connecté(e) pour aimer une publication.');
     const { data: existing } = await sbClient.from('likes').select('*').eq('post_id', postId).eq('user_id', user.id).maybeSingle();
     if(existing){
       await sbClient.from('likes').delete().eq('post_id', postId).eq('user_id', user.id);
@@ -282,7 +282,7 @@ const DB = (() => {
   async function addComment(postId, content){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول للتعليق');
+    if(!user) throw new Error('Vous devez être connecté(e) pour commenter.');
     const { data, error } = await sbClient.from('comments')
       .insert({ post_id:postId, author_id:user.id, content })
       .select('*, author:profiles(id, first_name, last_name, handle, avatar_url)').single();
@@ -294,7 +294,7 @@ const DB = (() => {
   async function toggleFollow(targetUserId){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول للمتابعة');
+    if(!user) throw new Error('Vous devez être connecté(e) pour suivre.');
     const { data: existing } = await sbClient.from('followers').select('*').eq('follower_id', user.id).eq('following_id', targetUserId).maybeSingle();
     if(existing){
       await sbClient.from('followers').delete().eq('follower_id', user.id).eq('following_id', targetUserId);
@@ -311,7 +311,7 @@ const DB = (() => {
   async function listConversations(){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول');
+    if(!user) throw new Error('Vous devez être connecté(e).');
     const { data, error } = await sbClient
       .from('messages')
       .select('id, content, created_at, read_at, sender_id, recipient_id, sender:profiles!messages_sender_id_fkey(id, first_name, last_name, handle, avatar_url), recipient:profiles!messages_recipient_id_fkey(id, first_name, last_name, handle, avatar_url)')
@@ -336,7 +336,7 @@ const DB = (() => {
   async function listMessages(otherUserId){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول');
+    if(!user) throw new Error('Vous devez être connecté(e).');
     const { data, error } = await sbClient
       .from('messages')
       .select('*')
@@ -349,7 +349,7 @@ const DB = (() => {
   async function sendMessage(recipientId, content){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول لإرسال رسالة');
+    if(!user) throw new Error('Vous devez être connecté(e) pour envoyer un message.');
     const { data, error } = await sbClient.from('messages')
       .insert({ sender_id:user.id, recipient_id:recipientId, content })
       .select().single();
@@ -480,7 +480,7 @@ const DB = (() => {
   async function joinWorld(worldId){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول للانضمام');
+    if(!user) throw new Error('Vous devez être connecté(e) pour rejoindre.');
     const { error } = await sbClient.from('world_members').insert({ world_id: worldId, user_id: user.id });
     if(error) throw error;
   }
@@ -488,7 +488,7 @@ const DB = (() => {
   async function leaveWorld(worldId){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول');
+    if(!user) throw new Error('Vous devez être connecté(e).');
     const { error } = await sbClient.from('world_members').delete().eq('world_id', worldId).eq('user_id', user.id);
     if(error) throw error;
   }
@@ -512,7 +512,7 @@ const DB = (() => {
   async function createCompany({ name, sector, description, website, logoUrl, coverUrl }){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول لإنشاء صفحة شركة');
+    if(!user) throw new Error('Vous devez être connecté(e) pour créer une page entreprise.');
     const { data, error } = await sbClient.from('companies')
       .insert({ owner_id:user.id, name, sector, description, website, logo_url:logoUrl, cover_url:coverUrl })
       .select().single();
@@ -523,7 +523,7 @@ const DB = (() => {
   async function toggleFollowCompany(companyId){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول للمتابعة');
+    if(!user) throw new Error('Vous devez être connecté(e) pour suivre.');
     const { data: existing } = await sbClient.from('company_followers').select('*').eq('company_id', companyId).eq('user_id', user.id).maybeSingle();
     if(existing){
       await sbClient.from('company_followers').delete().eq('company_id', companyId).eq('user_id', user.id);
@@ -551,7 +551,7 @@ const DB = (() => {
   async function createJob({ companyId, title, description, location, jobType, worldId, isRemote }){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول لنشر عرض عمل');
+    if(!user) throw new Error("Vous devez être connecté(e) pour publier une offre d'emploi.");
     const { data, error } = await sbClient.from('jobs')
       .insert({ company_id:companyId, posted_by:user.id, title, description, location, job_type:jobType, world_id:worldId, is_remote:isRemote })
       .select().single();
@@ -562,7 +562,7 @@ const DB = (() => {
   async function applyToJob(jobId, coverNote=''){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول للتقديم');
+    if(!user) throw new Error('Vous devez être connecté(e) pour postuler.');
     const { data, error } = await sbClient.from('job_applications')
       .insert({ job_id:jobId, applicant_id:user.id, cover_note:coverNote })
       .select().single();
@@ -586,7 +586,7 @@ const DB = (() => {
   async function createEvent({ title, description, location, isOnline, startsAt, endsAt, worldId, coverUrl }){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول لإنشاء حدث');
+    if(!user) throw new Error('Vous devez être connecté(e) pour créer un événement.');
     const { data, error } = await sbClient.from('events')
       .insert({ host_id:user.id, title, description, location, is_online:isOnline, starts_at:startsAt, ends_at:endsAt, world_id:worldId, cover_url:coverUrl })
       .select().single();
@@ -597,7 +597,7 @@ const DB = (() => {
   async function rsvpEvent(eventId, status='going'){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول للمشاركة');
+    if(!user) throw new Error('Vous devez être connecté(e) pour participer.');
     const { data, error } = await sbClient.from('event_attendees')
       .upsert({ event_id:eventId, user_id:user.id, status }, { onConflict:'event_id,user_id' })
       .select().single();
@@ -621,7 +621,7 @@ const DB = (() => {
   async function createListing({ title, description, category, priceCents, currency='EUR', coverUrl }){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول لإنشاء خدمة');
+    if(!user) throw new Error('Vous devez être connecté(e) pour créer un service.');
     const { data, error } = await sbClient.from('listings')
       .insert({ seller_id:user.id, title, description, category, price_cents:priceCents, currency, cover_url:coverUrl })
       .select().single();
@@ -632,7 +632,7 @@ const DB = (() => {
   async function orderListing(listingId){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول للطلب');
+    if(!user) throw new Error('Vous devez être connecté(e) pour commander.');
     // NOTE: this only records intent to buy. Real payment capture must go
     // through a Supabase Edge Function calling Stripe (or similar) — never
     // handle card numbers or final charge amounts directly in the browser.

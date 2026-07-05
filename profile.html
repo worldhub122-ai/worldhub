@@ -74,7 +74,7 @@ function mainProfile(){
               <div style="color:var(--text-3);font-size:13.5px">${MOCK.user.handle} · Développeur Full Stack</div>
             </div>
           </div>
-          <button class="btn btn-primary">Modifier le profil</button>
+          <button class="btn btn-primary" onclick="openEditProfileModal()">Modifier le profil</button>
         </div>
         <p style="color:var(--text-2);font-size:14px;margin:16px 0">${escapeHtml(MOCK.user.bio)} · 📍 Paris, France · 🔗 alexdev.io · Rejoint en janvier 2024</p>
         <div style="display:flex;gap:26px;font-size:13.5px">
@@ -84,12 +84,18 @@ function mainProfile(){
         </div>
       </div>
       <div class="tabs">
-        <div class="tab active">Publications</div>
-        <div class="tab">À propos</div>
-        <div class="tab">Médias</div>
-        <div class="tab">Enregistré</div>
+        <div class="tab active" onclick="switchProfileTab(this,'posts')">Publications</div>
+        <div class="tab" onclick="switchProfileTab(this,'about')">À propos</div>
+        <div class="tab" onclick="switchProfileTab(this,'media')">Médias</div>
+        <div class="tab" onclick="switchProfileTab(this,'saved')">Enregistré</div>
       </div>
-      ${MOCK.posts.slice(0,2).map(p=>`
+      <div id="profileTabContent">${profilePostsTabHTML()}</div>
+    </div>
+  </div>`;
+}
+
+function profilePostsTabHTML(){
+  return MOCK.posts.slice(0,2).map(p=>`
         <div class="post">
           <div class="post-head">
             <img class="avatar" src="${MOCK.user.avatar}" style="width:40px;height:40px">
@@ -98,9 +104,101 @@ function mainProfile(){
           </div>
           <div class="post-text">${escapeHtml(p.text)}</div>
           <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span>${p.comments} commentaires</span></div>
-        </div>`).join('')}
-    </div>
-  </div>`;
+        </div>`).join('');
+}
+
+function profileAboutTabHTML(){
+  return `
+    <div class="card-pad">
+      <h3 style="margin:0 0 10px;font-size:15px">À propos</h3>
+      <p style="font-size:13.5px;color:var(--text-2);line-height:1.6;margin:0 0 16px">${escapeHtml(MOCK.user.bio)}</p>
+      <h3 style="margin:16px 0 10px;font-size:15px">Compétences</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+        ${['JavaScript','TypeScript','React','Node.js','Python'].map(s=>`<span class="pill pill-muted">${s}</span>`).join('')}
+      </div>
+      <h3 style="margin:16px 0 10px;font-size:15px">Centres d’intérêt</h3>
+      ${['IA & ML','Web Development','Open Source','Design System'].map(s=>`<div class="row" style="padding:8px 0">🔹 ${s}</div>`).join('')}
+    </div>`;
+}
+
+function profileMediaTabHTML(){
+  return `
+    <div class="card-pad">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        ${[13,32,15,5,22,9,51,8].map(i=>`<img src="https://i.pravatar.cc/240?img=${i}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px">`).join('')}
+      </div>
+    </div>`;
+}
+
+/* Switch the active profile tab and load its content on demand
+   (Issue: tabs were purely decorative and never changed anything). */
+async function switchProfileTab(tabEl, tab){
+  document.querySelectorAll('.profile-card .tabs .tab').forEach(t=>t.classList.remove('active'));
+  tabEl.classList.add('active');
+  const container = document.getElementById('profileTabContent');
+  if (!container) return;
+  if (tab === 'posts') { container.innerHTML = profilePostsTabHTML(); return; }
+  if (tab === 'about') { container.innerHTML = profileAboutTabHTML(); return; }
+  if (tab === 'media') { container.innerHTML = profileMediaTabHTML(); return; }
+  if (tab === 'saved') {
+    container.innerHTML = `<div class="card-pad" style="text-align:center;color:var(--text-3)">Chargement...</div>`;
+    try {
+      const saved = await api.getSavedPosts();
+      container.innerHTML = saved.length
+        ? saved.map(p=>`
+          <div class="post">
+            <div class="post-head">
+              <div><div class="u-name">${escapeHtml(p.author)}</div><div class="u-meta">${escapeHtml(p.time)}</div></div>
+            </div>
+            <div class="post-text">${escapeHtml(p.text)}</div>
+            <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span>${p.comments} commentaires</span></div>
+          </div>`).join('')
+        : `<div class="card-pad" style="text-align:center;color:var(--text-3)">Aucun élément enregistré pour le moment.</div>`;
+    } catch (err) {
+      container.innerHTML = `<div class="card-pad" style="text-align:center;color:var(--text-3)">Connectez-vous pour voir vos éléments enregistrés.</div>`;
+    }
+  }
+}
+
+/* Edit-profile modal (Issue: "Modifier le profil" had no onclick). */
+function openEditProfileModal(){
+  const parts = (MOCK.user.name || '').split(' ');
+  const firstName = parts[0] || '';
+  const lastName = parts.slice(1).join(' ');
+  openModal(`
+    <h3 style="margin:0 0 16px">Modifier le profil</h3>
+    <div class="field"><label>Prénom</label><input id="epFirst" value="${escapeHtml(firstName)}"></div>
+    <div class="field"><label>Nom</label><input id="epLast" value="${escapeHtml(lastName)}"></div>
+    <div class="field"><label>Nom d'utilisateur</label><input id="epHandle" value="${escapeHtml((MOCK.user.handle||'').replace(/^@/,''))}"></div>
+    <div class="field"><label>Bio</label><textarea id="epBio" rows="3">${escapeHtml(MOCK.user.bio||'')}</textarea></div>
+    <div id="epErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" id="epSubmit" onclick="submitEditProfile()">Enregistrer</button>
+    </div>`);
+}
+async function submitEditProfile(){
+  const first_name = document.getElementById('epFirst').value.trim();
+  const last_name = document.getElementById('epLast').value.trim();
+  const handleRaw = document.getElementById('epHandle').value.trim().replace(/^@/,'');
+  const bio = document.getElementById('epBio').value.trim();
+  const errEl = document.getElementById('epErr');
+  if (!first_name){ errEl.textContent = 'Le prénom est requis.'; errEl.hidden = false; return; }
+  const btn = document.getElementById('epSubmit');
+  btn.disabled = true; btn.textContent = 'Enregistrement...';
+  try {
+    await api.updateProfile({ first_name, last_name, handle: '@' + handleRaw, bio });
+    MOCK.user.name = (first_name + ' ' + last_name).trim();
+    MOCK.user.handle = '@' + handleRaw;
+    MOCK.user.bio = bio;
+    closeModal();
+    showToast('Profil mis à jour ✓', 'success');
+    initLayout({ active:'profile', mainHTML: mainProfile(), rail: profileRail() });
+  } catch (err) {
+    errEl.textContent = err.message || 'Impossible de mettre à jour le profil.';
+    errEl.hidden = false;
+    btn.disabled = false; btn.textContent = 'Enregistrer';
+  }
 }
 
 /* ── Avatar/cover upload handlers (Issues 7/8) ──

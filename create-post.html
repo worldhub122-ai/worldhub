@@ -54,12 +54,25 @@ function mainCreate(){
         </select>
       </div>
       <div id="fileErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+      <div id="pollBuilder" hidden style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <b style="font-size:13.5px">📊 Sondage</b>
+          <span class="link" style="font-size:12.5px" onclick="removePoll()">Retirer</span>
+        </div>
+        <div class="field" style="margin-bottom:10px"><input id="pollQuestion" placeholder="Posez une question..."></div>
+        <div id="pollOptions"></div>
+        <div class="link" style="font-size:12.5px" onclick="addPollOption()">+ Ajouter une option</div>
+      </div>
       <input type="file" id="imageInput" accept="image/*" multiple hidden onchange="handleImageSelect(event)">
+      <input type="file" id="videoInput" accept="video/mp4,video/webm,video/quicktime" hidden onchange="handleVideoSelect(event)">
       <div class="composer-actions" style="margin-bottom:16px">
         <div class="chip blue" onclick="document.getElementById('imageInput').click()">🖼️ Image</div>
-        <div class="chip">🎬 Vidéo</div>
-        <div class="chip green">📊 Sondage</div>
-        <div class="chip pink">🤖 Assistant IA</div>
+        <div class="chip" onclick="document.getElementById('videoInput').click()">🎬 Vidéo</div>
+        <div class="chip green" onclick="togglePoll()">📊 Sondage</div>
+        <div class="chip pink" onclick="toggleAiSuggestions()">🤖 Assistant IA</div>
+      </div>
+      <div id="aiSuggestions" hidden style="display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px;margin-bottom:16px">
+        <div style="font-size:12px;color:var(--text-3);margin-bottom:2px">Suggestions pour démarrer votre publication :</div>
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end">
         <button class="btn btn-ghost" onclick="location.href='index.html'">Annuler</button>
@@ -117,11 +130,122 @@ async function handleImageSelect(evt){
   }
 }
 
+/* ── Video selection: same validation pattern as images (Issue:
+   the "Vidéo" chip existed but had no file input or upload code at all). ── */
+const MAX_VIDEO_MB = 50;
+const ALLOWED_VIDEO_TYPES = ['video/mp4','video/webm','video/quicktime'];
+let _uploadedVideoUrl = null;
+
+async function handleVideoSelect(evt){
+  const file = evt.target.files?.[0];
+  evt.target.value = '';
+  if (!file) return;
+  const errEl = document.getElementById('fileErr');
+  errEl.hidden = true;
+  if (!ALLOWED_VIDEO_TYPES.includes(file.type)){
+    errEl.textContent = `Format non supporté: ${file.name}. Utilisez MP4, WEBM ou MOV.`;
+    errEl.hidden = false;
+    return;
+  }
+  if (file.size > MAX_VIDEO_MB * 1024 * 1024){
+    errEl.textContent = `"${file.name}" dépasse la taille maximale de ${MAX_VIDEO_MB} Mo.`;
+    errEl.hidden = false;
+    return;
+  }
+  const preview = document.getElementById('previewMedia');
+  const localUrl = URL.createObjectURL(file);
+  const vid = document.createElement('video');
+  vid.src = localUrl;
+  vid.controls = true;
+  vid.style.cssText = 'max-width:100%;border-radius:10px;margin-top:6px;opacity:.5';
+  preview.appendChild(vid);
+  try {
+    if (typeof DB !== 'undefined' && DB.isConnected){
+      const url = await DB.uploadPostMedia(file);
+      _uploadedVideoUrl = url;
+      vid.src = url;
+    } else {
+      _uploadedVideoUrl = localUrl;
+    }
+    vid.style.opacity = '1';
+  } catch (err) {
+    vid.remove();
+    errEl.textContent = `Échec de l'envoi de "${file.name}": ${err.message || 'erreur inconnue'}`;
+    errEl.hidden = false;
+  }
+}
+
+/* ── Poll builder (Issue: "Sondage" chip existed but did nothing).
+   There is no dedicated polls table in the schema yet, so the poll is
+   composed into the post's text content as a clearly-marked block —
+   this keeps it real and working today without inventing a fake backend. ── */
+let _pollOptionCount = 0;
+function togglePoll(){
+  const el = document.getElementById('pollBuilder');
+  el.hidden = !el.hidden;
+  if (!el.hidden && !document.getElementById('pollOptions').children.length){
+    addPollOption(); addPollOption();
+  }
+}
+function removePoll(){
+  document.getElementById('pollBuilder').hidden = true;
+  document.getElementById('pollOptions').innerHTML = '';
+  _pollOptionCount = 0;
+}
+function addPollOption(){
+  if (document.getElementById('pollOptions').children.length >= 5) return;
+  _pollOptionCount++;
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:8px;margin-bottom:8px';
+  row.innerHTML = `<input placeholder="Option ${_pollOptionCount}" style="flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;color:var(--text-1);font-size:13.5px">
+    <button type="button" class="icon-btn" onclick="this.parentElement.remove()">✕</button>`;
+  document.getElementById('pollOptions').appendChild(row);
+}
+function buildPollText(){
+  const el = document.getElementById('pollBuilder');
+  if (el.hidden) return '';
+  const question = document.getElementById('pollQuestion').value.trim();
+  const options = Array.from(document.querySelectorAll('#pollOptions input')).map(i=>i.value.trim()).filter(Boolean);
+  if (!question || options.length < 2) return '';
+  return `\n\n📊 Sondage : ${question}\n${options.map(o=>'• '+o).join('\n')}`;
+}
+
+/* ── "Assistant IA" — offers a handful of canned writing prompts to
+   insert into the composer. This is intentionally a suggestions list,
+   not a real generative call, so the label doesn't overpromise. ── */
+const AI_SUGGESTIONS = [
+  'Partagez une astuce technique que vous avez apprise récemment 💡',
+  'Annoncez un projet sur lequel vous travaillez en ce moment 🚀',
+  'Posez une question ouverte à la communauté ❓',
+  'Racontez une leçon apprise après une erreur ou un échec 🔁',
+];
+function toggleAiSuggestions(){
+  const el = document.getElementById('aiSuggestions');
+  el.hidden = !el.hidden;
+  if (!el.hidden && el.children.length <= 1){
+    AI_SUGGESTIONS.forEach(s=>{
+      const item = document.createElement('div');
+      item.className = 'link';
+      item.style.cssText = 'font-size:13px;cursor:pointer;padding:4px 0';
+      item.textContent = '→ ' + s;
+      item.onclick = () => {
+        const ta = document.getElementById('postText');
+        ta.value = s;
+        ta.dispatchEvent(new Event('input'));
+        el.hidden = true;
+        ta.focus();
+      };
+      el.appendChild(item);
+    });
+  }
+}
+
 async function handlePublish(){
-  const text = document.getElementById('postText').value.trim();
-  if (!text && _uploadedImageUrls.length === 0){
+  const pollText = buildPollText();
+  const text = document.getElementById('postText').value.trim() + pollText;
+  if (!text.trim() && _uploadedImageUrls.length === 0 && !_uploadedVideoUrl){
     const errEl = document.getElementById('fileErr');
-    errEl.textContent = 'Ajoutez du texte ou une image avant de publier.';
+    errEl.textContent = 'Ajoutez du texte, une image ou une vidéo avant de publier.';
     errEl.hidden = false;
     return;
   }
@@ -129,7 +253,7 @@ async function handlePublish(){
   btn.disabled = true;
   btn.textContent = 'Publication...';
   try {
-    await api.createPost(text, null, _uploadedImageUrls[0] || null);
+    await api.createPost(text, null, _uploadedImageUrls[0] || _uploadedVideoUrl || null);
     location.href = 'index.html';
   } catch (err) {
     const errEl = document.getElementById('fileErr');

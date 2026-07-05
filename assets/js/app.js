@@ -241,6 +241,29 @@ function railEvents(){
 }
 function defaultRail(){ return railWorlds()+railTrending()+railTopMembers()+railEvents(); }
 
+/* ---------------- GENERIC MODAL ----------------
+   Small reusable overlay used by every "+ Créer ..." action
+   (company, job, event, listing) and profile editing, instead of
+   leaving those buttons with no onclick handler at all. ----------- */
+function openModal(innerHTML){
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.id = 'wh-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(5,5,10,.6);backdrop-filter:blur(4px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `<div class="card card-pad" style="max-width:460px;width:100%;max-height:86vh;overflow:auto;position:relative">
+    <button type="button" onclick="closeModal()" aria-label="Fermer" style="position:absolute;top:12px;right:12px;background:none;border:none;color:var(--text-3);font-size:20px;cursor:pointer;line-height:1">✕</button>
+    ${innerHTML}
+  </div>`;
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+  document.addEventListener('keydown', _modalEscHandler);
+  document.body.appendChild(overlay);
+}
+function _modalEscHandler(e){ if (e.key === 'Escape') closeModal(); }
+function closeModal(){
+  document.getElementById('wh-modal-overlay')?.remove();
+  document.removeEventListener('keydown', _modalEscHandler);
+}
+
 /* ---------------- MOBILE MENU ---------------- */
 function wireMobileMenu(){
   const btn = document.getElementById('menuToggle');
@@ -752,6 +775,73 @@ const api = {
   async joinWorld(worldId) {
     if (typeof DB !== 'undefined' && DB.isConnected) return DB.joinWorld(worldId);
     console.log('joinWorld->mock', worldId);
+    return true;
+  },
+
+  /* ── Comments (Issue: comment button only ever linked to create-post.html,
+     there was no way to actually post a reply) ── */
+  async addComment(postId, content) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.addComment(postId, content);
+    console.log('addComment->mock', postId, content);
+    return {
+      id: 'mock-' + Date.now(),
+      content,
+      author: { first_name: MOCK.user.name.split(' ')[0], last_name: MOCK.user.name.split(' ').slice(1).join(' '), avatar_url: MOCK.user.avatar },
+    };
+  },
+
+  /* ── Create-company / create-job / create-event / create-listing —
+     the DB layer already supported these (DB.createCompany, DB.createJob,
+     DB.createEvent, DB.createListing) but nothing in app.js exposed them,
+     so the "+ Créer ..." buttons on those pages had nowhere to call. ── */
+  async createCompany(payload) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.createCompany(payload);
+    console.log('createCompany->mock', payload);
+    return { id: 'mock-' + Date.now(), ...payload };
+  },
+  async createJob(payload) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.createJob(payload);
+    console.log('createJob->mock', payload);
+    return { id: 'mock-' + Date.now(), ...payload };
+  },
+  async createEvent(payload) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.createEvent(payload);
+    console.log('createEvent->mock', payload);
+    return { id: 'mock-' + Date.now(), ...payload };
+  },
+  async createListing(payload) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.createListing(payload);
+    console.log('createListing->mock', payload);
+    return { id: 'mock-' + Date.now(), ...payload };
+  },
+
+  /* ── Saved posts (used by the "Enregistré" tab on profile.html) ── */
+  async getSavedPosts() {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try {
+        const rows = await DB.listSavedPosts();
+        return rows.map(p => ({
+          id: p.id,
+          author: p.author ? (p.author.first_name + ' ' + (p.author.last_name || '')).trim() : 'Utilisateur',
+          time: _relTime(p.created_at),
+          text: p.content || '',
+          likes: Array.isArray(p.likes) ? p.likes.length : 0,
+          comments: Array.isArray(p.comments) ? p.comments.length : 0,
+        }));
+      } catch (err) { console.warn('[WorldHub] getSavedPosts failed:', err.message); }
+    }
+    return [];
+  },
+
+  /* ── Update profile (Issue: "Modifier le profil" had no handler) ── */
+  async updateProfile(patch) {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      const user = await DB.getCurrentUser();
+      if (!user) throw new Error('Vous devez être connecté pour modifier votre profil.');
+      return DB.updateProfile(user.id, patch);
+    }
+    console.log('updateProfile->mock', patch);
+    Object.assign(MOCK.user, patch);
     return true;
   },
 

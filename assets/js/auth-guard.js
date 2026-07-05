@@ -5,7 +5,36 @@
    Include AFTER supabase.js on every protected page.
    ========================================================== */
 
-/* ── 1. Centralised error display (Issue 10) ─────────────── */
+/* ── 1. Centralised toast / error display (Issue 10) ─────────────── */
+/* showToast(msg, type) — generic toast used both for errors (red) and
+   confirmations like "Lien copié" / "Publication créée" (green/neutral).
+   Kept in this file (rather than app.js) so it's available on every
+   protected AND public page that includes auth-guard.js. */
+function showToast(msg, type = 'error') {
+  let toast = document.getElementById('wh-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'wh-toast';
+    document.body.appendChild(toast);
+  }
+  const palette = {
+    error:   { bg: 'var(--red-soft)',   border: 'var(--red)'   },
+    success: { bg: 'var(--green-soft)', border: 'var(--green)' },
+    info:    { bg: 'var(--surface-3)',  border: 'var(--border)'},
+  }[type] || { bg: 'var(--surface-3)', border: 'var(--border)' };
+  toast.style.cssText = [
+    'position:fixed;bottom:24px;left:50%;transform:translateX(-50%)',
+    `background:${palette.bg};border:1px solid ${palette.border}`,
+    'color:var(--text-1);padding:12px 20px;border-radius:var(--radius-md)',
+    'font-size:14px;z-index:9999;max-width:380px;text-align:center',
+    'box-shadow:0 8px 24px rgba(0,0,0,.5)',
+  ].join(';');
+  toast.textContent = msg;
+  toast.hidden = false;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { toast.hidden = true; }, 4000);
+}
+
 function showError(error, container) {
   const msg = (error && error.message) ? error.message : 'Une erreur inattendue est survenue.';
   console.error('[WorldHub]', error);
@@ -13,24 +42,7 @@ function showError(error, container) {
     container.textContent = msg;
     container.hidden = false;
   } else {
-    /* Graceful toast-style fallback */
-    let toast = document.getElementById('wh-toast');
-    if (!toast) {
-      toast = document.createElement('div');
-      toast.id = 'wh-toast';
-      toast.style.cssText = [
-        'position:fixed;bottom:24px;left:50%;transform:translateX(-50%)',
-        'background:var(--red-soft);border:1px solid var(--red)',
-        'color:var(--text-1);padding:12px 20px;border-radius:var(--radius-md)',
-        'font-size:14px;z-index:9999;max-width:380px;text-align:center',
-        'box-shadow:0 8px 24px rgba(0,0,0,.5)',
-      ].join(';');
-      document.body.appendChild(toast);
-    }
-    toast.textContent = msg;
-    toast.hidden = false;
-    clearTimeout(toast._t);
-    toast._t = setTimeout(() => { toast.hidden = true; }, 5000);
+    showToast(msg, 'error');
   }
 }
 

@@ -54,13 +54,60 @@ function worldPostCard(p){
     </div>
     <div class="post-text">${escapeHtml(p.text)}</div>
     ${p.code?`<div class="code-card">${p.code}</div>`:''}
-    <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span>${p.comments} commentaires</span></div>
+    <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span class="comments-count">${p.comments} commentaires</span></div>
     <div class="post-actions">
       <div class="a-btn" data-like data-post-id="${p.id || ''}"><span>🤍</span> J’aime <span class="count">${p.likes}</span></div>
-      <div class="a-btn" onclick="location.href='create-post.html'">💬 Commenter</div>
-      <div class="a-btn">🔄 Partager</div>
+      <div class="a-btn" onclick="toggleCommentBox('${p.id || ''}')">💬 Commenter</div>
+      <div class="a-btn" onclick="handleShare('${p.id || ''}')">🔄 Partager</div>
+    </div>
+    <div class="comment-box" id="cbox-${p.id || ''}" hidden style="display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--border-soft)">
+      <img class="avatar" src="${MOCK.user.avatar}" style="width:28px;height:28px;flex:none">
+      <input type="text" placeholder="Écrire un commentaire..." id="cinput-${p.id || ''}" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-pill);padding:8px 14px;color:var(--text-1);font-size:13.5px" onkeydown="if(event.key==='Enter') submitComment('${p.id || ''}')">
+      <button class="btn btn-primary btn-sm" onclick="submitComment('${p.id || ''}')">Envoyer</button>
     </div>
   </div>`;
+}
+
+/* Same inline-reply + share behaviour as index.html (Issue: comment
+   button only redirected to create-post.html; share button did nothing). */
+function toggleCommentBox(postId){
+  const box = document.getElementById('cbox-' + postId);
+  if (!box) return;
+  box.hidden = !box.hidden;
+  if (!box.hidden) document.getElementById('cinput-' + postId)?.focus();
+}
+
+async function submitComment(postId){
+  const input = document.getElementById('cinput-' + postId);
+  const text = input?.value.trim();
+  if (!text) return;
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    const session = await DB.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+  }
+  input.disabled = true;
+  try {
+    await api.addComment(postId, text);
+    input.value = '';
+    const post = document.querySelector(`[data-post-id="${postId}"]`)?.closest('.post');
+    const countEl = post?.querySelector('.comments-count');
+    if (countEl) countEl.textContent = `${(parseInt(countEl.textContent.replace(/\D/g,''))||0)+1} commentaires`;
+    showToast('Commentaire ajouté ✓', 'success');
+  } catch (err) {
+    showError(err);
+  } finally {
+    input.disabled = false;
+  }
+}
+
+async function handleShare(postId){
+  const url = `${location.origin}${location.pathname}${location.search}&post=${encodeURIComponent(postId)}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast('Lien copié dans le presse-papiers ✓', 'success');
+  } catch (err) {
+    showToast(url, 'info');
+  }
 }
 
 /* Join/leave this world: requires login, toggles button state,

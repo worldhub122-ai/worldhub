@@ -40,8 +40,48 @@ function marketRail(){
     <div style="font-size:28px;margin-bottom:6px">💼</div>
     <div style="font-weight:700;margin-bottom:4px">Vendez vos services</div>
     <p style="font-size:12.5px;color:var(--text-3);margin:0 0 12px">Proposez vos compétences à toute la communauté WorldHub.</p>
-    <button class="btn btn-primary" style="width:100%">+ Créer un service</button>
+    <button class="btn btn-primary" style="width:100%" onclick="openCreateListingModal()">+ Créer un service</button>
   </div>`;
+}
+
+/* Create-listing modal (Issue: the button had no onclick at all,
+   even though DB.createListing already existed). */
+function openCreateListingModal(){
+  openModal(`
+    <h3 style="margin:0 0 16px">Créer un service</h3>
+    <div class="field"><label>Titre</label><input id="clTitle" placeholder="ex: Développement site vitrine"></div>
+    <div class="field"><label>Description</label><textarea id="clDesc" rows="3" placeholder="Décrivez votre service"></textarea></div>
+    <div class="field"><label>Catégorie</label><input id="clCategory" placeholder="ex: Web, Design, Vidéo..."></div>
+    <div class="field"><label>Prix (€)</label><input id="clPrice" type="number" min="0" step="1" placeholder="ex: 150"></div>
+    <div id="clErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" id="clSubmit" onclick="submitCreateListing()">Créer</button>
+    </div>`);
+}
+async function submitCreateListing(){
+  const title = document.getElementById('clTitle').value.trim();
+  const description = document.getElementById('clDesc').value.trim();
+  const category = document.getElementById('clCategory').value.trim();
+  const priceEuros = parseFloat(document.getElementById('clPrice').value);
+  const errEl = document.getElementById('clErr');
+  if (!title || isNaN(priceEuros) || priceEuros < 0){ errEl.textContent = 'Le titre et un prix valide sont requis.'; errEl.hidden = false; return; }
+  if (typeof DB !== 'undefined' && DB.isConnected){
+    const session = await DB.getSession();
+    if (!session){ window.location.href = 'login.html'; return; }
+  }
+  const btn = document.getElementById('clSubmit');
+  btn.disabled = true; btn.textContent = 'Création...';
+  try{
+    await api.createListing({ title, description, category, priceCents: Math.round(priceEuros * 100) });
+    closeModal();
+    showToast('Service créé ✓', 'success');
+    render();
+  }catch(err){
+    errEl.textContent = err.message || 'Impossible de créer ce service.';
+    errEl.hidden = false;
+    btn.disabled = false; btn.textContent = 'Créer';
+  }
 }
 
 /* Order a listing: requires login. This only records buyer intent —

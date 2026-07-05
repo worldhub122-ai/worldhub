@@ -63,7 +63,7 @@ function mainNotif(items){
   return `
   <div class="main-col">
     <div class="card">
-      <div class="card-head"><h3>Notifications</h3><span class="link" style="margin-right:14px" onclick="handleMarkAllRead()">Tout marquer comme lu</span><span class="link">⚙️ Paramètres</span></div>
+      <div class="card-head"><h3>Notifications</h3><span class="link" style="margin-right:14px" onclick="handleMarkAllRead()">Tout marquer comme lu</span><span class="link" onclick="location.href='settings.html'">⚙️ Paramètres</span></div>
       ${items.length ? items.map(notifRow).join('') : `<div class="row" style="padding:24px;justify-content:center;color:var(--text-3)">Aucune notification pour le moment.</div>`}
     </div>
   </div>`;
