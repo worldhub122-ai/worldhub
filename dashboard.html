@@ -33,21 +33,27 @@ function bars(){
   return vals.map(v=>`<div class="bar" style="height:${v}%"></div>`).join('');
 }
 
-function mainDash(){
+function fmtCompact(n){
+  if (n === null || n === undefined) return '—';
+  if (n >= 1000) return (n/1000).toFixed(1).replace('.0','') + 'k';
+  return String(n);
+}
+
+function mainDash(stats){
   return `
   <div class="main-col">
     <div class="card card-pad" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
       <div style="font-size:19px;font-weight:800">Tableau de bord</div>
       <div style="display:flex;gap:10px;align-items:center">
         <span class="pill pill-muted">1–30 juin 2024</span>
-        <button class="icon-btn">⟳</button>
+        <button class="icon-btn" onclick="location.reload()">⟳</button>
       </div>
     </div>
     <div class="stat-grid">
-      ${statCard('📝','accent','24','Publications','+12%')}
-      ${statCard('👥','blue','12.4k','Abonnés','+8%')}
-      ${statCard('💬','pink','3.2k','Interactions','+15%')}
-      ${statCard('👁️','green','45.6k','Vues','+20%')}
+      ${statCard('📝','accent',fmtCompact(stats.posts),'Publications','')}
+      ${statCard('👥','blue',fmtCompact(stats.followers),'Abonnés','')}
+      ${statCard('💬','pink',fmtCompact(stats.interactions),'Interactions','')}
+      ${statCard('👁️','green',fmtCompact(stats.views),'Vues', stats.views===null ? '(bientôt)' : '')}
     </div>
     <div class="card">
       <div class="card-head"><h3>Graphique des interactions</h3><span class="link">1 juin – 30 juin</span></div>
@@ -65,7 +71,8 @@ function mainDash(){
     </div>
   </div>`;
 }
-initLayout({ active:'dashboard', mainHTML: mainDash(), noRail:true, wide:true });
+const _stats = await api.getDashboardStats();
+initLayout({ active:'dashboard', mainHTML: mainDash(_stats), noRail:true, wide:true });
 
 })();
 </script>

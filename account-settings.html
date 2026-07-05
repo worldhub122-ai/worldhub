@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorldHub — Paramètres du compte</title>
+<link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div id="topbar-slot"></div>
+<div id="shell-slot"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/supabase.js"></script>
+<script src="assets/js/auth-guard.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+(async function() {
+  const _session = await requireAuth();
+  if (!_session) return;
+
+function settingsNav(active){
+  const items = [
+    { id:'profile',  icon:'👤', label:'Profil' },
+    { id:'security', icon:'🔒', label:'Sécurité' },
+    { id:'privacy',  icon:'🛡️', label:'Confidentialité' },
+    { id:'notifs',   icon:'🔔', label:'Notifications' },
+    { id:'danger',   icon:'⚠️', label:'Zone de danger' },
+  ];
+  return `
+  <div class="card">
+    ${items.map(it=>`
+      <div class="row settings-tab ${it.id===active?'active':''}" style="padding:12px 14px;cursor:pointer;${it.id===active?'background:var(--surface-2);border-radius:var(--radius-sm)':''}" onclick="location.hash='${it.id}'">
+        <span>${it.icon}</span><span style="font-weight:${it.id===active?'700':'500'}">${it.label}</span>
+      </div>`).join('')}
+  </div>`;
+}
+
+function fieldRow(label, inputHtml, hint){
+  return `
+  <div class="field">
+    <label>${label}</label>
+    ${inputHtml}
+    ${hint ? `<div style="font-size:12px;color:var(--text-3);margin-top:4px">${hint}</div>` : ''}
+  </div>`;
+}
+
+async function panelSecurity(){
+  const user = (DB.isConnected) ? await DB.getCurrentUser() : null;
+  return `
+  <div class="card card-pad">
+    <h3 style="margin:0 0 16px">Sécurité du compte</h3>
+    <div id="secMsg"></div>
+    ${fieldRow('Adresse email', `<input type="email" id="newEmail" value="${user?.email||''}" placeholder="vous@exemple.com">`, 'Un email de confirmation sera envoyé à la nouvelle adresse.')}
+    <button class="btn btn-outline" style="margin-bottom:24px" onclick="handleUpdateEmail()">Mettre à jour l'email</button>
+
+    <hr style="border-color:var(--border);margin:20px 0">
+
+    ${fieldRow('Nouveau mot de passe', `<input type="password" id="newPass" placeholder="Minimum 8 caractères">`)}
+    ${fieldRow('Confirmer le mot de passe', `<input type="password" id="newPass2" placeholder="Répétez le mot de passe">`)}
+    <button class="btn btn-primary" onclick="handleUpdatePassword()">Changer le mot de passe</button>
+  </div>`;
+}
+
+function panelPrivacy(){
+  return `
+  <div class="card card-pad">
+    <h3 style="margin:0 0 16px">Confidentialité</h3>
+    <div class="row" style="justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border-soft)">
+      <div><div class="row-title">Compte privé</div><div class="row-sub">Seuls vos abonnés approuvés voient vos publications.</div></div>
+      <input type="checkbox" id="prefPrivate">
+    </div>
+    <div class="row" style="justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border-soft)">
+      <div><div class="row-title">Autoriser les messages de tout le monde</div><div class="row-sub">Désactivez pour n'accepter les messages que de vos abonnements.</div></div>
+      <input type="checkbox" id="prefMsgAll" checked>
+    </div>
+    <div class="row" style="justify-content:space-between;padding:12px 0">
+      <div><div class="row-title">Afficher mon statut en ligne</div><div class="row-sub">Vos contacts verront quand vous êtes actif.</div></div>
+      <input type="checkbox" id="prefOnline" checked>
+    </div>
+    <button class="btn btn-primary" style="margin-top:16px" onclick="handleSavePrivacy()">Enregistrer</button>
+    <div id="privacyMsg"></div>
+    <p style="font-size:12px;color:var(--text-3);margin-top:14px">
+      Ces préférences sont stockées dans <code>profiles.settings</code> (colonne JSONB) — voir <code>supabase/schema.sql</code>.
+    </p>
+  </div>`;
+}
+
+function panelNotifs(){
+  const rows = [
+    ['J\'aime sur mes publications','notifLikes'],
+    ['Nouveaux commentaires','notifComments'],
+    ['Nouveaux abonnés','notifFollows'],
+    ['Messages privés','notifMessages'],
+    ['Résumé hebdomadaire par email','notifWeekly'],
+  ];
+  return `
+  <div class="card card-pad">
+    <h3 style="margin:0 0 16px">Préférences de notification</h3>
+    ${rows.map(([label,id])=>`
+      <div class="row" style="justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border-soft)">
+        <div class="row-title">${label}</div>
+        <input type="checkbox" id="${id}" checked>
+      </div>`).join('')}
+    <button class="btn btn-primary" style="margin-top:16px" onclick="handleSaveNotifPrefs()">Enregistrer</button>
+    <div id="notifPrefMsg"></div>
+  </div>`;
+}
+
+function panelDanger(){
+  return `
+  <div class="card card-pad" style="border-color:var(--red)">
+    <h3 style="margin:0 0 10px;color:var(--red)">Zone de danger</h3>
+    <p style="font-size:13.5px;color:var(--text-2);margin:0 0 16px">
+      La suppression de votre compte est <b>définitive</b>. Toutes vos publications, messages et données seront effacés.
+    </p>
+    <div id="dangerMsg"></div>
+    <button class="btn" style="background:var(--red);color:#fff" onclick="handleDeleteAccount()">Supprimer mon compte</button>
+  </div>`;
+}
+
+function panelProfileInfo(profile){
+  return `
+  <div class="card card-pad">
+    <h3 style="margin:0 0 16px">Informations du profil</h3>
+    <div id="profMsg"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      ${fieldRow('Prénom', `<input id="pfFirst" value="${profile.name?.split(' ')[0]||''}">`)}
+      ${fieldRow('Nom', `<input id="pfLast" value="${profile.name?.split(' ').slice(1).join(' ')||''}">`)}
+    </div>
+    ${fieldRow('Identifiant', `<input id="pfHandle" value="${(profile.handle||'').replace('@','')}">`, 'Sans le @')}
+    ${fieldRow('Bio', `<textarea id="pfBio" rows="3">${profile.bio||''}</textarea>`)}
+    <button class="btn btn-primary" onclick="handleSaveProfileInfo()">Enregistrer</button>
+  </div>`;
+}
+
+async function render(){
+  const tab = (location.hash||'#profile').replace('#','');
+  let mainHTML = '';
+  if (tab === 'security')     mainHTML = await panelSecurity();
+  else if (tab === 'privacy') mainHTML = panelPrivacy();
+  else if (tab === 'notifs')  mainHTML = panelNotifs();
+  else if (tab === 'danger')  mainHTML = panelDanger();
+  else { const profile = await api.getCurrentProfile(); mainHTML = panelProfileInfo(profile); }
+
+  initLayout({
+    active: 'settings',
+    mainHTML: `<div class="main-col">${mainHTML}</div>`,
+    rail: settingsNav(tab),
+  });
+}
+
+window.addEventListener('hashchange', render);
+render();
+
+/* ── Handlers ── */
+async function handleUpdateEmail(){
+  const email = document.getElementById('newEmail').value.trim();
+  const msg = document.getElementById('secMsg');
+  if (!email) return;
+  try {
+    await DB.updateEmail(email);
+    msg.innerHTML = `<div class="succ-msg">✅ Vérifiez votre boîte mail pour confirmer la nouvelle adresse.</div>`;
+  } catch (err) { msg.innerHTML = `<div class="err-msg">${err.message}</div>`; }
+}
+
+async function handleUpdatePassword(){
+  const p1 = document.getElementById('newPass').value;
+  const p2 = document.getElementById('newPass2').value;
+  const msg = document.getElementById('secMsg');
+  if (p1.length < 8) { msg.innerHTML = `<div class="err-msg">Le mot de passe doit comporter au moins 8 caractères.</div>`; return; }
+  if (p1 !== p2) { msg.innerHTML = `<div class="err-msg">Les mots de passe ne correspondent pas.</div>`; return; }
+  try {
+    await DB.updatePassword(p1);
+    msg.innerHTML = `<div class="succ-msg">✅ Mot de passe mis à jour.</div>`;
+  } catch (err) { msg.innerHTML = `<div class="err-msg">${err.message}</div>`; }
+}
+
+async function handleSavePrivacy(){
+  const msg = document.getElementById('privacyMsg');
+  const settings = {
+    private: document.getElementById('prefPrivate').checked,
+    allow_messages_from_all: document.getElementById('prefMsgAll').checked,
+    show_online_status: document.getElementById('prefOnline').checked,
+  };
+  try {
+    if (DB.isConnected) {
+      const user = await DB.getCurrentUser();
+      await DB.updateProfile(user.id, { settings });
+    }
+    msg.innerHTML = `<div class="succ-msg">✅ Préférences enregistrées.</div>`;
+  } catch (err) { msg.innerHTML = `<div class="err-msg">${err.message}</div>`; }
+}
+
+async function handleSaveNotifPrefs(){
+  const msg = document.getElementById('notifPrefMsg');
+  const notif_prefs = {
+    likes: document.getElementById('notifLikes').checked,
+    comments: document.getElementById('notifComments').checked,
+    follows: document.getElementById('notifFollows').checked,
+    messages: document.getElementById('notifMessages').checked,
+    weekly_email: document.getElementById('notifWeekly').checked,
+  };
+  try {
+    if (DB.isConnected) {
+      const user = await DB.getCurrentUser();
+      await DB.updateProfile(user.id, { notif_prefs });
+    }
+    msg.innerHTML = `<div class="succ-msg">✅ Préférences enregistrées.</div>`;
+  } catch (err) { msg.innerHTML = `<div class="err-msg">${err.message}</div>`; }
+}
+
+async function handleSaveProfileInfo(){
+  const msg = document.getElementById('profMsg');
+  const patch = {
+    first_name: document.getElementById('pfFirst').value.trim(),
+    last_name:  document.getElementById('pfLast').value.trim(),
+    handle:     '@' + document.getElementById('pfHandle').value.trim().replace(/^@/,''),
+    bio:        document.getElementById('pfBio').value.trim(),
+  };
+  try {
+    if (DB.isConnected) {
+      const user = await DB.getCurrentUser();
+      await DB.updateProfile(user.id, patch);
+    }
+    msg.innerHTML = `<div class="succ-msg">✅ Profil mis à jour.</div>`;
+  } catch (err) { msg.innerHTML = `<div class="err-msg">${err.message}</div>`; }
+}
+
+async function handleDeleteAccount(){
+  const msg = document.getElementById('dangerMsg');
+  if (!confirm('Êtes-vous absolument sûr ? Cette action est irréversible.')) return;
+  try {
+    await DB.deleteAccount();
+    window.location.href = 'login.html';
+  } catch (err) {
+    msg.innerHTML = `<div class="err-msg">${err.message} — la suppression nécessite une Edge Function "delete-account" côté serveur (voir supabase/schema.sql).</div>`;
+  }
+}
+
+})();
+</script>
+</body>
+</html>

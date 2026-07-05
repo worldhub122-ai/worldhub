@@ -339,6 +339,128 @@ const DB = (() => {
     if(channel) sbClient.removeChannel(channel);
   }
 
+  // ---------------- Notifications ----------------
+  // يرجع إشعارات المستخدم الحالي (الأحدث أولاً)
+  async function listNotifications(limit=30){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('يجب تسجيل الدخول');
+    const { data, error } = await sbClient
+      .from('notifications')
+      .select('id, type, content, read_at, created_at, actor:profiles!notifications_actor_id_fkey(id, first_name, last_name, handle, avatar_url), post_id')
+      .eq('recipient_id', user.id)
+      .order('created_at', { ascending:false })
+      .limit(limit);
+    if(error) throw error;
+    return data;
+  }
+
+  async function markNotificationRead(notificationId){
+    assertConnected();
+    const { error } = await sbClient.from('notifications')
+      .update({ read_at: new Date().toISOString() }).eq('id', notificationId);
+    if(error) throw error;
+  }
+
+  async function markAllNotificationsRead(){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) return;
+    const { error } = await sbClient.from('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('recipient_id', user.id).is('read_at', null);
+    if(error) throw error;
+  }
+
+  async function getUnreadNotificationCount(){
+    if(!isConnected) return 0;
+    const user = await getCurrentUser();
+    if(!user) return 0;
+    const { count, error } = await sbClient.from('notifications')
+      .select('*', { count:'exact', head:true })
+      .eq('recipient_id', user.id).is('read_at', null);
+    if(error) throw error;
+    return count || 0;
+  }
+
+  // اشتراك لحظي بالإشعارات الجديدة (يتطلب تفعيل Realtime على جدول notifications)
+  function subscribeToNotifications(myUserId, onInsert){
+    assertConnected();
+    return sbClient.channel('notifications-' + myUserId)
+      .on('postgres_changes', { event:'INSERT', schema:'public', table:'notifications', filter:`recipient_id=eq.${myUserId}` },
+          payload => onInsert(payload.new))
+      .subscribe();
+  }
+
+  // ---------------- Dashboard stats (Issue: hardcoded dashboard numbers) ----------------
+  async function getDashboardStats(userId){
+    assertConnected();
+    const [{ count: posts }, { count: followers }, likesRes, commentsRes] = await Promise.all([
+      sbClient.from('posts').select('*', { count:'exact', head:true }).eq('author_id', userId),
+      sbClient.from('followers').select('*', { count:'exact', head:true }).eq('following_id', userId),
+      sbClient.from('posts').select('likes(id)').eq('author_id', userId),
+      sbClient.from('posts').select('comments(id)').eq('author_id', userId),
+    ]);
+    const totalLikes = (likesRes.data||[]).reduce((s,p)=>s+(p.likes?.length||0),0);
+    const totalComments = (commentsRes.data||[]).reduce((s,p)=>s+(p.comments?.length||0),0);
+    return {
+      posts: posts||0,
+      followers: followers||0,
+      interactions: totalLikes + totalComments,
+      views: null, /* requires a page-view tracking table — not implemented yet */
+    };
+  }
+
+  // ---------------- Storage: avatar / cover uploads ----------------
+  async function uploadAvatar(file){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('يجب تسجيل الدخول');
+    const ext = (file.name.split('.').pop()||'jpg').toLowerCase();
+    const path = `${user.id}/avatar_${Date.now()}.${ext}`;
+    const { error: upErr } = await sbClient.storage.from('avatars').upload(path, file, { cacheControl:'3600', upsert:true });
+    if(upErr) throw upErr;
+    const { data } = sbClient.storage.from('avatars').getPublicUrl(path);
+    await updateProfile(user.id, { avatar_url: data.publicUrl });
+    return data.publicUrl;
+  }
+
+  async function uploadCover(file){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('يجب تسجيل الدخول');
+    const ext = (file.name.split('.').pop()||'jpg').toLowerCase();
+    const path = `${user.id}/cover_${Date.now()}.${ext}`;
+    const { error: upErr } = await sbClient.storage.from('covers').upload(path, file, { cacheControl:'3600', upsert:true });
+    if(upErr) throw upErr;
+    const { data } = sbClient.storage.from('covers').getPublicUrl(path);
+    await updateProfile(user.id, { cover_url: data.publicUrl });
+    return data.publicUrl;
+  }
+
+  // ---------------- Account management ----------------
+  async function updateEmail(newEmail){
+    assertConnected();
+    const { error } = await sbClient.auth.updateUser({ email:newEmail });
+    if(error) throw error;
+  }
+
+  async function updatePassword(newPassword){
+    assertConnected();
+    const { error } = await sbClient.auth.updateUser({ password:newPassword });
+    if(error) throw error;
+  }
+
+  // حذف الحساب يتطلب صلاحيات "service role" التي لا يمكن استخدامها من المتصفح لأسباب أمنية.
+  // يجب إنشاء Supabase Edge Function (مثلاً "delete-account") تُستدعى هنا وتُنفّذ الحذف من جهة الخادم.
+  async function deleteAccount(){
+    assertConnected();
+    const { data, error } = await sbClient.functions.invoke('delete-account');
+    if(error) throw error;
+    await signOut();
+    return data;
+  }
+
   // بحث بسيط عن مستخدمين بالاسم أو المعرّف لبدء محادثة جديدة
   async function searchProfiles(query){
     assertConnected();
@@ -364,5 +486,10 @@ const DB = (() => {
     listConversations, listMessages, sendMessage, markMessagesRead,
     subscribeToIncomingMessages, subscribeToReadReceipts, typingChannel, removeChannel,
     searchProfiles,
+    listNotifications, markNotificationRead, markAllNotificationsRead,
+    getUnreadNotificationCount, subscribeToNotifications,
+    getDashboardStats,
+    uploadAvatar, uploadCover,
+    updateEmail, updatePassword, deleteAccount,
   };
 })();

@@ -31,7 +31,7 @@ function postCard(p){
     ${p.highlight ? `<div class="highlight-card">JS</div>` : ''}
     <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span>${p.comments} commentaires · ${p.shares} partages</span></div>
     <div class="post-actions">
-      <div class="a-btn" data-like><span>🤍</span> J’aime <span class="count">${p.likes}</span></div>
+      <div class="a-btn" data-like data-post-id="${p.id}"><span>🤍</span> J’aime <span class="count">${p.likes}</span></div>
       <div class="a-btn">💬 Commenter</div>
       <div class="a-btn">🔄 Partager</div>
     </div>
