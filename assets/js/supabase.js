@@ -158,6 +158,64 @@ const DB = (() => {
     return data.publicUrl;
   }
 
+  // يرفع صورة البروفايل إلى bucket "avatars"، يحدّث profiles.avatar_url،
+  // ويرجع الرابط العام الجديد. يحذف الصورة القديمة (إن وُجدت) بعد نجاح
+  // الرفع حتى لا تتراكم ملفات يتيمة في الـ bucket.
+  async function uploadAvatar(file){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('يجب تسجيل الدخول لتغيير صورة البروفايل');
+    const oldProfile = await getProfile(user.id).catch(()=>null);
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    const path = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+    const { error: upErr } = await sbClient.storage.from('avatars').upload(path, file, {
+      cacheControl: '3600', upsert: false,
+    });
+    if(upErr) throw upErr;
+    const { data: pub } = sbClient.storage.from('avatars').getPublicUrl(path);
+    const publicUrl = pub.publicUrl;
+    const { error: updErr } = await sbClient.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id);
+    if(updErr) throw updErr;
+    if(oldProfile?.avatar_url){
+      const oldPath = _storagePathFromPublicUrl(oldProfile.avatar_url, 'avatars');
+      if(oldPath) sbClient.storage.from('avatars').remove([oldPath]).catch(()=>{});
+    }
+    return publicUrl;
+  }
+
+  // نفس المنطق لصورة الغلاف، على bucket "covers" وعمود profiles.cover_url.
+  async function uploadCover(file){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('يجب تسجيل الدخول لتغيير صورة الغلاف');
+    const oldProfile = await getProfile(user.id).catch(()=>null);
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    const path = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+    const { error: upErr } = await sbClient.storage.from('covers').upload(path, file, {
+      cacheControl: '3600', upsert: false,
+    });
+    if(upErr) throw upErr;
+    const { data: pub } = sbClient.storage.from('covers').getPublicUrl(path);
+    const publicUrl = pub.publicUrl;
+    const { error: updErr } = await sbClient.from('profiles').update({ cover_url: publicUrl }).eq('id', user.id);
+    if(updErr) throw updErr;
+    if(oldProfile?.cover_url){
+      const oldPath = _storagePathFromPublicUrl(oldProfile.cover_url, 'covers');
+      if(oldPath) sbClient.storage.from('covers').remove([oldPath]).catch(()=>{});
+    }
+    return publicUrl;
+  }
+
+  // يستخرج "userId/filename.ext" من رابط عام لملف مخزّن، لحذفه لاحقاً.
+  // يرجع null إن لم يكن الرابط من نفس الـ bucket (تجنّباً لحذف شيء خاطئ).
+  function _storagePathFromPublicUrl(url, bucket){
+    if(!url) return null;
+    const marker = `/storage/v1/object/public/${bucket}/`;
+    const idx = url.indexOf(marker);
+    if(idx === -1) return null;
+    return decodeURIComponent(url.slice(idx + marker.length));
+  }
+
   // ---------------- Saved posts (المحفوظات) ----------------
   async function toggleSavePost(postId){
     assertConnected();
@@ -603,7 +661,7 @@ const DB = (() => {
   return {
     isConnected, sbClient,
     signUp, signIn, signOut, signInWithOAuth, getSession, getCurrentUser,
-    getProfile, updateProfile, getFollowCounts,
+    getProfile, updateProfile, getFollowCounts, uploadAvatar, uploadCover,
     listPosts, createPost, updatePost, deletePost, uploadPostMedia,
     toggleLike, addComment, toggleFollow,
     toggleSavePost, listSavedPostIds, listSavedPosts, getPost,

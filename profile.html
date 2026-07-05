@@ -41,15 +41,34 @@ function profileRail(){
   </div>`;
 }
 
+/* Small circular "change photo" button overlaid on the avatar/cover.
+   Clicking it opens the matching hidden <input type="file">. */
+function _photoEditBtn(inputId, extraStyle){
+  return `
+  <button type="button" class="icon-btn" onclick="document.getElementById('${inputId}').click()"
+    title="Changer la photo"
+    style="position:absolute;background:rgba(15,15,20,.65);border:1px solid var(--border-soft);${extraStyle}">📷</button>`;
+}
+
 function mainProfile(){
+  const coverStyle = MOCK.user.cover
+    ? `background:center/cover no-repeat url('${MOCK.user.cover}')`
+    : '';
   return `
   <div class="main-col">
     <div class="card profile-card">
-      <div class="profile-cover"></div>
+      <div class="profile-cover" id="profileCoverEl" style="position:relative;${coverStyle}">
+        ${_photoEditBtn('coverInput', 'right:14px;bottom:14px;width:36px;height:36px;font-size:16px')}
+        <input type="file" id="coverInput" accept="image/*" hidden onchange="handleCoverSelect(event)">
+      </div>
       <div class="profile-head">
         <div style="display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:12px">
           <div style="display:flex;align-items:flex-end;gap:14px">
-            <img class="profile-avatar" src="${MOCK.user.avatar}">
+            <div style="position:relative;flex:none">
+              <img class="profile-avatar" id="profileAvatarEl" src="${MOCK.user.avatar}">
+              ${_photoEditBtn('avatarInput', 'right:0;bottom:2px;width:30px;height:30px;font-size:14px')}
+              <input type="file" id="avatarInput" accept="image/*" hidden onchange="handleAvatarSelect(event)">
+            </div>
             <div>
               <div style="font-size:20px;font-weight:800;display:flex;align-items:center;gap:6px">${MOCK.user.name} <span class="pill pill-accent">✓ Vérifié</span></div>
               <div style="color:var(--text-3);font-size:13.5px">${MOCK.user.handle} · Développeur Full Stack</div>
@@ -84,6 +103,42 @@ function mainProfile(){
   </div>`;
 }
 
+/* ── Avatar/cover upload handlers (Issues 7/8) ──
+   Validate + upload via api.uploadAvatar/api.uploadCover, then patch the
+   image on the page and the topbar avatar without a full reload. Reverts
+   the file input (and shows an error toast) if the upload fails. */
+async function handleAvatarSelect(evt){
+  const file = evt.target.files?.[0];
+  evt.target.value = ''; // allow re-selecting the same file later
+  if (!file) return;
+  const img = document.getElementById('profileAvatarEl');
+  const prevSrc = img ? img.src : null;
+  try {
+    const url = await api.uploadAvatar(file);
+    MOCK.user.avatar = url;
+    if (img) img.src = url;
+    const topbarAvatar = document.querySelector('.avatar-btn img');
+    if (topbarAvatar) topbarAvatar.src = url;
+  } catch (err) {
+    if (img && prevSrc) img.src = prevSrc;
+    showError(err);
+  }
+}
+
+async function handleCoverSelect(evt){
+  const file = evt.target.files?.[0];
+  evt.target.value = '';
+  if (!file) return;
+  const coverEl = document.getElementById('profileCoverEl');
+  try {
+    const url = await api.uploadCover(file);
+    MOCK.user.cover = url;
+    if (coverEl) coverEl.style.background = `center/cover no-repeat url('${url}')`;
+  } catch (err) {
+    showError(err);
+  }
+}
+
 // Issue 5: load real profile from Supabase
 (async function loadProfile() {
   const p = await api.getCurrentProfile();
@@ -91,6 +146,7 @@ function mainProfile(){
   MOCK.user.name      = p.name;
   MOCK.user.handle    = p.handle;
   MOCK.user.avatar    = p.avatar;
+  MOCK.user.cover     = p.cover || null;
   MOCK.user.bio       = p.bio;
   MOCK.user.followers = typeof p.followers === 'number' ? p.followers.toLocaleString('fr') : p.followers;
   MOCK.user.following = typeof p.following === 'number' ? p.following.toLocaleString('fr') : p.following;

@@ -620,6 +620,7 @@ const api = {
             name:      (profile.first_name + ' ' + (profile.last_name || '')).trim(),
             handle:    profile.handle     || '@user',
             avatar:    profile.avatar_url || MOCK.user.avatar,
+            cover:     profile.cover_url  || null,
             bio:       profile.bio        || MOCK.user.bio,
             followers: counts.followers,
             following: counts.following,
@@ -631,6 +632,23 @@ const api = {
       }
     }
     return { ...MOCK.user, id: null };
+  },
+
+  /* ── Profile photo uploads (Issues 7/8) ──
+     Validate type/size client-side, then upload via Supabase Storage.
+     Without a backend connection, fall back to a local object URL so
+     the UI still previews the change during the session. */
+  async uploadAvatar(file) {
+    _validateProfileImage(file);
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.uploadAvatar(file);
+    console.log('uploadAvatar->mock', file.name);
+    return URL.createObjectURL(file);
+  },
+  async uploadCover(file) {
+    _validateProfileImage(file);
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.uploadCover(file);
+    console.log('uploadCover->mock', file.name);
+    return URL.createObjectURL(file);
   },
 
   /* ── Companies ── */
@@ -770,6 +788,21 @@ function _notifDefaultText(n){
     share:'a partagé votre publication',
   };
   return `${escapeHtml(who)} ${map[n.type] || 'a interagi avec votre contenu'}`;
+}
+
+/* ── Shared image validation for avatar/cover uploads ──
+   Same rules as post-media uploads in create-post.html: JPG/PNG/WEBP/GIF,
+   max 8 Mo. Throws a user-facing error (in French, shown via showError). */
+const PROFILE_IMG_ALLOWED_TYPES = ['image/jpeg','image/png','image/webp','image/gif'];
+const PROFILE_IMG_MAX_MB = 8;
+function _validateProfileImage(file){
+  if (!file) throw new Error('Aucun fichier sélectionné.');
+  if (!PROFILE_IMG_ALLOWED_TYPES.includes(file.type)) {
+    throw new Error(`Format non supporté : ${file.name}. Utilisez JPG, PNG, WEBP ou GIF.`);
+  }
+  if (file.size > PROFILE_IMG_MAX_MB * 1024 * 1024) {
+    throw new Error(`"${file.name}" dépasse la taille maximale de ${PROFILE_IMG_MAX_MB} Mo.`);
+  }
 }
 
 /* ── Relative time helper ── */
