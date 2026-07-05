@@ -16,29 +16,36 @@
 <script src="assets/js/app.js"></script>
 <script>
 function postCard(p){
+  const pid = p.actionId || p.id;
   return `
   <div class="post">
+    ${repostBannerHTML(p)}
     <div class="post-head">
       <img class="avatar" src="${p.avatarUrl || ('https://i.pravatar.cc/80?u=' + encodeURIComponent(p.handle))}" style="width:40px;height:40px">
       <div>
         <div class="u-name">${escapeHtml(p.author)} <span class="badge-world">${escapeHtml(p.world)}</span></div>
         <div class="u-meta">${escapeHtml(p.handle)} · ${escapeHtml(p.time)}</div>
       </div>
-      <span class="more">⋯</span>
+      ${moreMenuHTML(p)}
     </div>
-    <div class="post-text">${escapeHtml(p.text)}</div>
+    <div class="post-text">${renderPostText(p.text)}</div>
     ${p.code ? `<div class="code-card">${p.code}</div>` : ''}
     ${p.highlight ? `<div class="highlight-card">JS</div>` : ''}
+    ${p.imageUrl ? `<img src="${p.imageUrl}" style="max-width:100%;border-radius:10px;margin-top:8px;display:block">` : ''}
+    ${p.videoUrl ? `<video src="${p.videoUrl}" controls style="max-width:100%;border-radius:10px;margin-top:8px;display:block"></video>` : ''}
+    ${quotedPostHTML(p)}
+    ${pollPlaceholderHTML(p)}
     <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span class="comments-count">${p.comments} commentaires · ${p.shares} partages</span></div>
     <div class="post-actions">
-      <div class="a-btn" data-like data-post-id="${p.id || ''}"><span>🤍</span> J’aime <span class="count">${p.likes}</span></div>
-      <div class="a-btn" onclick="toggleCommentBox('${p.id || ''}')">💬 Commenter</div>
-      <div class="a-btn" onclick="handleShare('${p.id || ''}')">🔄 Partager</div>
+      <div class="a-btn" data-like data-post-id="${pid}"><span>🤍</span> J’aime <span class="count">${p.likes}</span></div>
+      <div class="a-btn" onclick="toggleCommentBox('${pid}')">💬 Commenter</div>
+      ${repostButtonHTML(p)}
+      <div class="a-btn" onclick="handleShare('${pid}')">🔗 Partager</div>
     </div>
-    <div class="comment-box" id="cbox-${p.id || ''}" hidden style="display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--border-soft)">
+    <div class="comment-box" id="cbox-${pid}" hidden style="display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--border-soft)">
       <img class="avatar" src="${MOCK.user.avatar}" style="width:28px;height:28px;flex:none">
-      <input type="text" placeholder="Écrire un commentaire..." id="cinput-${p.id || ''}" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-pill);padding:8px 14px;color:var(--text-1);font-size:13.5px" onkeydown="if(event.key==='Enter') submitComment('${p.id || ''}')">
-      <button class="btn btn-primary btn-sm" onclick="submitComment('${p.id || ''}')">Envoyer</button>
+      <input type="text" placeholder="Écrire un commentaire... (@mention #tag)" id="cinput-${pid}" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-pill);padding:8px 14px;color:var(--text-1);font-size:13.5px" onkeydown="if(event.key==='Enter') submitComment('${pid}')">
+      <button class="btn btn-primary btn-sm" onclick="submitComment('${pid}')">Envoyer</button>
     </div>
     ${renderCommentPreview(p)}
   </div>`;
@@ -74,7 +81,7 @@ async function submitComment(postId){
       <div style="display:flex;gap:8px;margin-bottom:8px;font-size:13px">
         <img class="avatar" src="${MOCK.user.avatar}" style="width:26px;height:26px;flex:none">
         <div><b>${escapeHtml(MOCK.user.name)}</b>
-        <span style="color:var(--text-2)">${escapeHtml(text)}</span></div>
+        <span style="color:var(--text-2)">${renderPostText(text)}</span></div>
       </div>`;
     if (previewEl) {
       previewEl.insertAdjacentHTML('afterbegin', rowHTML);
@@ -116,7 +123,7 @@ function renderCommentPreview(p){
       <div style="display:flex;gap:8px;margin-bottom:8px;font-size:13px">
         <img class="avatar" src="${c.author?.avatar_url || 'https://i.pravatar.cc/60?u='+(c.author?.id||'x')}" style="width:26px;height:26px;flex:none">
         <div><b>${escapeHtml(c.author ? (c.author.first_name+' '+(c.author.last_name||'')).trim() : 'Utilisateur')}</b>
-        <span style="color:var(--text-2)">${escapeHtml(c.content)}</span></div>
+        <span style="color:var(--text-2)">${renderPostText(c.content)}</span></div>
       </div>`).join('')}
     ${p.comments > 2 ? `<div class="link" style="font-size:12.5px;cursor:pointer" onclick="location.href='create-post.html'">Voir les ${p.comments} commentaires</div>` : ''}
   </div>`;
@@ -148,6 +155,9 @@ async function render(){
   MOCK.user.handle = profile.handle;
 
   const posts = await api.getFeed();
+  _feedUserId = profile.id || null;
+  _feedPostsById = {};
+  posts.forEach(p => { _feedPostsById[p.actionId || p.id] = p; });
   const mainHTML = `
     <div class="main-col">
       ${composer()}
@@ -162,6 +172,7 @@ async function render(){
       </div>
     </div>`;
   initLayout({ active:'home', mainHTML });
+  hydratePollsIn(posts);
 }
 render();
 </script>

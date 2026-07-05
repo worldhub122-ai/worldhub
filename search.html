@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorldHub — Recherche</title>
+<link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div id="topbar-slot"></div>
+<div id="shell-slot"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/supabase.js"></script>
+<script src="assets/js/auth-guard.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+const QUERY = new URLSearchParams(location.search).get('q') || '';
+
+function sectionCard(title, rowsHTML, emptyLabel){
+  return `
+  <div class="card">
+    <div class="card-head"><h3>${title}</h3></div>
+    ${rowsHTML || `<div class="row" style="padding:16px;justify-content:center;color:var(--text-3)">${emptyLabel}</div>`}
+  </div>`;
+}
+
+function profileRow(p){
+  return `
+  <div class="row" style="cursor:pointer" onclick="location.href='profile.html'">
+    <img class="avatar" src="${p.avatar}" style="width:36px;height:36px">
+    <div><div class="row-title">${escapeHtml(p.name)}</div><div class="row-sub">${escapeHtml(p.handle)}</div></div>
+  </div>`;
+}
+function postRow(p){
+  return `
+  <div class="row" style="align-items:flex-start;cursor:pointer" onclick="location.href='index.html'">
+    <img class="avatar" src="${p.avatarUrl || 'https://i.pravatar.cc/80'}" style="width:36px;height:36px;flex:none">
+    <div><div class="row-title">${escapeHtml(p.author)}</div><div class="row-sub" style="white-space:normal">${escapeHtml(p.text)}</div></div>
+  </div>`;
+}
+function worldRow(w){
+  return `
+  <div class="row" style="cursor:pointer" onclick="location.href='world.html?id=${encodeURIComponent(w.id||'')}'">
+    <div class="tile" style="background:var(--accent-soft);color:var(--accent-2)">${w.icon||'🌍'}</div>
+    <div><div class="row-title">${escapeHtml(w.name)}</div><div class="row-sub">${escapeHtml(String(w.members||0))} membres</div></div>
+  </div>`;
+}
+function companyRow(c){
+  return `
+  <div class="row" style="cursor:pointer" onclick="location.href='companies.html'">
+    <div class="tile" style="background:var(--blue-soft);color:var(--blue)">🏢</div>
+    <div><div class="row-title">${escapeHtml(c.name)}</div><div class="row-sub">${escapeHtml(c.sector||'')}</div></div>
+  </div>`;
+}
+function jobRow(j){
+  return `
+  <div class="row" style="cursor:pointer" onclick="location.href='jobs.html'">
+    <div class="tile" style="background:var(--accent-soft);color:var(--accent-2)">🧰</div>
+    <div><div class="row-title">${escapeHtml(j.title)}</div><div class="row-sub">${escapeHtml(j.company||'')} · ${escapeHtml(j.location||'')}</div></div>
+  </div>`;
+}
+
+function mainSearch(q, results, loading){
+  if (!q) {
+    return `
+    <div class="main-col">
+      <div class="card card-pad" style="text-align:center;color:var(--text-3)">
+        Utilisez la barre de recherche en haut (ou ⌘K) pour trouver des personnes, publications, mondes, entreprises ou offres.
+      </div>
+    </div>`;
+  }
+  if (loading) {
+    return `
+    <div class="main-col">
+      <div class="card card-pad" style="text-align:center;color:var(--text-3)">Recherche en cours...</div>
+    </div>`;
+  }
+  const totalCount = results.profiles.length + results.posts.length + results.worlds.length + results.companies.length + results.jobs.length;
+  return `
+  <div class="main-col">
+    <div class="card card-pad">
+      <div style="font-size:19px;font-weight:800">Résultats pour « ${escapeHtml(q)} »</div>
+      <div style="color:var(--text-3);font-size:13px;margin-top:4px">${totalCount} résultat${totalCount>1?'s':''}</div>
+    </div>
+    ${sectionCard('Personnes', results.profiles.map(profileRow).join(''), 'Aucune personne trouvée.')}
+    ${sectionCard('Publications', results.posts.map(postRow).join(''), 'Aucune publication trouvée.')}
+    ${sectionCard('Mondes', results.worlds.map(worldRow).join(''), 'Aucun monde trouvé.')}
+    ${sectionCard('Entreprises', results.companies.map(companyRow).join(''), 'Aucune entreprise trouvée.')}
+    ${sectionCard('Offres d’emploi', results.jobs.map(jobRow).join(''), 'Aucune offre trouvée.')}
+  </div>`;
+}
+
+async function render(){
+  initLayout({ active:'home', mainHTML: mainSearch(QUERY, null, true), noRail:true });
+  /* Prefill the topbar search box with the current query so it doesn't
+     look empty/disconnected from the results shown below. */
+  const input = document.getElementById('topbarSearchInput');
+  if (input) input.value = QUERY;
+
+  if (!QUERY) return;
+  const results = await api.search(QUERY);
+  initLayout({ active:'home', mainHTML: mainSearch(QUERY, results, false), noRail:true });
+  const input2 = document.getElementById('topbarSearchInput');
+  if (input2) input2.value = QUERY;
+}
+render();
+</script>
+</body>
+</html>

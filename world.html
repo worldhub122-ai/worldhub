@@ -45,25 +45,32 @@ function worldRail(world){
 }
 
 function worldPostCard(p){
+  const pid = p.actionId || p.id;
   return `
   <div class="post">
+    ${repostBannerHTML(p)}
     <div class="post-head">
       <img class="avatar" src="${p.avatarUrl || ('https://i.pravatar.cc/80?u='+encodeURIComponent(p.handle||p.author))}" style="width:40px;height:40px">
       <div><div class="u-name">${escapeHtml(p.author)}</div><div class="u-meta">${escapeHtml(p.time)}</div></div>
-      <span class="more">⋯</span>
+      ${moreMenuHTML(p)}
     </div>
-    <div class="post-text">${escapeHtml(p.text)}</div>
+    <div class="post-text">${renderPostText(p.text)}</div>
     ${p.code?`<div class="code-card">${p.code}</div>`:''}
+    ${p.imageUrl ? `<img src="${p.imageUrl}" style="max-width:100%;border-radius:10px;margin-top:8px;display:block">` : ''}
+    ${p.videoUrl ? `<video src="${p.videoUrl}" controls style="max-width:100%;border-radius:10px;margin-top:8px;display:block"></video>` : ''}
+    ${quotedPostHTML(p)}
+    ${pollPlaceholderHTML(p)}
     <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span class="comments-count">${p.comments} commentaires</span></div>
     <div class="post-actions">
-      <div class="a-btn" data-like data-post-id="${p.id || ''}"><span>🤍</span> J’aime <span class="count">${p.likes}</span></div>
-      <div class="a-btn" onclick="toggleCommentBox('${p.id || ''}')">💬 Commenter</div>
-      <div class="a-btn" onclick="handleShare('${p.id || ''}')">🔄 Partager</div>
+      <div class="a-btn" data-like data-post-id="${pid}"><span>🤍</span> J’aime <span class="count">${p.likes}</span></div>
+      <div class="a-btn" onclick="toggleCommentBox('${pid}')">💬 Commenter</div>
+      ${repostButtonHTML(p)}
+      <div class="a-btn" onclick="handleShare('${pid}')">🔗 Partager</div>
     </div>
-    <div class="comment-box" id="cbox-${p.id || ''}" hidden style="display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--border-soft)">
+    <div class="comment-box" id="cbox-${pid}" hidden style="display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--border-soft)">
       <img class="avatar" src="${MOCK.user.avatar}" style="width:28px;height:28px;flex:none">
-      <input type="text" placeholder="Écrire un commentaire..." id="cinput-${p.id || ''}" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-pill);padding:8px 14px;color:var(--text-1);font-size:13.5px" onkeydown="if(event.key==='Enter') submitComment('${p.id || ''}')">
-      <button class="btn btn-primary btn-sm" onclick="submitComment('${p.id || ''}')">Envoyer</button>
+      <input type="text" placeholder="Écrire un commentaire... (@mention #tag)" id="cinput-${pid}" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-pill);padding:8px 14px;color:var(--text-1);font-size:13.5px" onkeydown="if(event.key==='Enter') submitComment('${pid}')">
+      <button class="btn btn-primary btn-sm" onclick="submitComment('${pid}')">Envoyer</button>
     </div>
   </div>`;
 }
@@ -175,7 +182,13 @@ async function render(){
   ]);
   _world = world;
   _isMember = isMember;
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    try { const me = await DB.getCurrentUser(); _feedUserId = me?.id || null; } catch { _feedUserId = null; }
+  }
+  _feedPostsById = {};
+  posts.forEach(p => { _feedPostsById[p.actionId || p.id] = p; });
   initLayout({ active: WORLD_ID, mainHTML: mainWorld(world, posts), rail: worldRail(world) });
+  hydratePollsIn(posts);
 }
 render();
 </script>

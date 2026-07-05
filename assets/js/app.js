@@ -88,14 +88,14 @@ const MOCK = {
   ],
 
   notifications: [
-    { icon:'❤️', color:'pink',   text:'Sarah Parker a aimé votre publication',              time:'il y a 5 min', unread:true },
-    { icon:'💬', color:'blue',   text:'John Smith a commenté votre publication',            time:'il y a 20 min', unread:true },
-    { icon:'📣', color:'accent', text:'Alex Johnson vous a mentionné dans un commentaire',   time:'il y a 1h', unread:true },
-    { icon:'🔄', color:'green',  text:'Votre publication a été partagée 5 fois',             time:'il y a 2h', unread:true },
-    { icon:'🌍', color:'yellow', text:'Nouveau membre dans le monde Programmation',          time:'il y a 3h', unread:true },
-    { icon:'➕', color:'accent', text:'Mike Wilson a commencé à vous suivre',                time:'il y a 4h', unread:true },
-    { icon:'💬', color:'blue',   text:'Emma Davis a répondu à votre commentaire',            time:'il y a 6h', unread:false },
-    { icon:'🔥', color:'pink',   text:'Votre contenu est tendance',                          time:'il y a 1j', unread:false },
+    { id:'m1', type:'like',    icon:'❤️', color:'pink',   text:'Sarah Parker a aimé votre publication',              time:'il y a 5 min', unread:true },
+    { id:'m2', type:'comment', icon:'💬', color:'blue',   text:'John Smith a commenté votre publication',            time:'il y a 20 min', unread:true },
+    { id:'m3', type:'mention', icon:'📣', color:'accent', text:'Alex Johnson vous a mentionné dans un commentaire',   time:'il y a 1h', unread:true },
+    { id:'m4', type:'share',   icon:'🔄', color:'green',  text:'Votre publication a été partagée 5 fois',             time:'il y a 2h', unread:true },
+    { id:'m5', type:'system',  icon:'🌍', color:'yellow', text:'Nouveau membre dans le monde Programmation',          time:'il y a 3h', unread:true },
+    { id:'m6', type:'follow',  icon:'➕', color:'accent', text:'Mike Wilson a commencé à vous suivre',                time:'il y a 4h', unread:true },
+    { id:'m7', type:'comment', icon:'💬', color:'blue',   text:'Emma Davis a répondu à votre commentaire',            time:'il y a 6h', unread:false },
+    { id:'m8', type:'system',  icon:'🔥', color:'pink',   text:'Votre contenu est tendance',                          time:'il y a 1j', unread:false },
   ],
 
   jobs: [
@@ -139,6 +139,180 @@ function escapeHtml(str){
     .replaceAll("'", '&#39;');
 }
 
+/* ── @Mentions / #Hashtags rendering (Issue: post text was pure escaped
+   text — no way to tell a mention/hashtag was clickable). Escapes first
+   for XSS safety, THEN turns @handle / #tag into links. Both link to
+   search.html since there's no public per-user profile page yet. ── */
+function renderPostText(text){
+  const escaped = escapeHtml(text);
+  return escaped
+    .replace(/(^|[^\w@])@([a-zA-Z0-9_.]{2,32})/g, (m, pre, handle) =>
+      `${pre}<a href="search.html?q=${encodeURIComponent('@'+handle)}" style="color:var(--accent-2);font-weight:600;text-decoration:none" onclick="event.stopPropagation()">@${handle}</a>`)
+    .replace(/(^|[^\w#])#([\p{L}0-9_]{2,50})/gu, (m, pre, tag) =>
+      `${pre}<a href="search.html?q=${encodeURIComponent('#'+tag)}" style="color:var(--accent-2);font-weight:600;text-decoration:none" onclick="event.stopPropagation()">#${tag}</a>`);
+}
+
+/* ── Shared post "..." menu (Modifier / Supprimer) — only rendered for
+   the post's own author. Uses a single `pid` per feed row (see
+   _mapPostRow: `pid` = the *actionable* post id — the original post's id
+   for a plain repost, or the row's own id otherwise). NOTE: if the same
+   original post is repost by two different people and both show up in
+   the same feed load, they will share one `pid` and thus one menu DOM id
+   — an accepted edge-case limitation, not a correctness issue for
+   likes/comments/edits themselves. ── */
+let _feedUserId = null;
+let _feedPostsById = {};
+function moreMenuHTML(p){
+  const pid = p.actionId || p.id;
+  if(!_feedUserId || String(p.authorId) !== String(_feedUserId)){
+    return `<span class="more">⋯</span>`;
+  }
+  return `
+  <span class="more" style="cursor:pointer;position:relative" onclick="toggleMoreMenu(event,'${pid}')">⋯
+    <div class="more-menu" id="moremenu-${pid}" hidden style="position:absolute;top:22px;right:0;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);min-width:150px;z-index:20;box-shadow:0 8px 20px rgba(0,0,0,.4);text-align:left">
+      <div class="row" style="padding:10px 14px;cursor:pointer" onclick="event.stopPropagation();openEditPostModal('${pid}')">✏️ Modifier</div>
+      <div class="row" style="padding:10px 14px;cursor:pointer;color:var(--red)" onclick="event.stopPropagation();handleDeletePost('${pid}')">🗑️ Supprimer</div>
+    </div>
+  </span>`;
+}
+function _closeAllFloatingMenus(){
+  document.querySelectorAll('.more-menu').forEach(m=>m.hidden = true);
+}
+function toggleMoreMenu(evt, pid){
+  evt.stopPropagation();
+  const el = document.getElementById('moremenu-' + pid);
+  const wasHidden = el ? el.hidden : true;
+  _closeAllFloatingMenus();
+  if(el) el.hidden = !wasHidden;
+}
+function _wireFloatingMenuOutsideClick(){
+  if(window._whMenuOutsideWired) return;
+  window._whMenuOutsideWired = true;
+  document.addEventListener('click', _closeAllFloatingMenus);
+}
+
+function openEditPostModal(pid){
+  document.getElementById('moremenu-'+pid)?.setAttribute('hidden','');
+  const p = _feedPostsById[pid];
+  if(!p) return;
+  openModal(`
+    <h3 style="margin:0 0 16px">Modifier la publication</h3>
+    <div class="field"><textarea id="editPostText" rows="5">${escapeHtml(p.text)}</textarea></div>
+    <div id="editPostErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" id="editPostSubmit" onclick="submitEditPost('${pid}')">Enregistrer</button>
+    </div>`);
+}
+async function submitEditPost(pid){
+  const text = document.getElementById('editPostText').value.trim();
+  const errEl = document.getElementById('editPostErr');
+  if(!text){ errEl.textContent = 'Le contenu ne peut pas être vide.'; errEl.hidden = false; return; }
+  const btn = document.getElementById('editPostSubmit');
+  btn.disabled = true; btn.textContent = 'Enregistrement...';
+  try{
+    await api.updatePost(pid, text);
+    closeModal();
+    showToast('Publication modifiée ✓', 'success');
+    if (typeof render === 'function') render();
+  }catch(err){
+    errEl.textContent = err.message || 'Impossible de modifier cette publication.';
+    errEl.hidden = false;
+    btn.disabled = false; btn.textContent = 'Enregistrer';
+  }
+}
+async function handleDeletePost(pid){
+  document.getElementById('moremenu-'+pid)?.setAttribute('hidden','');
+  if(!confirm('Supprimer définitivement cette publication ?')) return;
+  try{
+    await api.deletePost(pid);
+    showToast('Publication supprimée ✓', 'success');
+    if (typeof render === 'function') render();
+  }catch(err){
+    showError(err);
+  }
+}
+
+/* ── Repost / Quote-repost menu (Issue: "🔄 Partager" only ever copied a
+   link — there was no real repost-inside-the-platform feature at all) ── */
+function repostButtonHTML(p){
+  const pid = p.actionId || p.id;
+  return `
+  <div class="a-btn" style="position:relative" onclick="toggleRepostMenu(event,'${pid}')">
+    <span>${p.hasReposted ? '✅' : '🔁'}</span> Republier <span class="count" id="repostcount-${pid}">${p.repostCount || 0}</span>
+    <div class="more-menu" id="repostmenu-${pid}" hidden style="position:absolute;bottom:34px;left:0;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);min-width:190px;z-index:20;box-shadow:0 8px 20px rgba(0,0,0,.4);text-align:left">
+      <div class="row" style="padding:10px 14px;cursor:pointer" onclick="event.stopPropagation();handleSimpleRepost('${pid}')">🔁 ${p.hasReposted ? 'Annuler la republication' : 'Republier'}</div>
+      <div class="row" style="padding:10px 14px;cursor:pointer" onclick="event.stopPropagation();openQuoteRepostModal('${pid}')">💬 Citer</div>
+    </div>
+  </div>`;
+}
+function toggleRepostMenu(evt, pid){
+  evt.stopPropagation();
+  const el = document.getElementById('repostmenu-' + pid);
+  const wasHidden = el ? el.hidden : true;
+  _closeAllFloatingMenus();
+  if(el) el.hidden = !wasHidden;
+}
+async function handleSimpleRepost(pid){
+  document.getElementById('repostmenu-'+pid)?.setAttribute('hidden','');
+  try{
+    const res = await api.toggleRepost(pid);
+    showToast(res.reposted ? 'Republié ✓' : 'Republication annulée', 'success');
+    if (typeof render === 'function') render();
+  }catch(err){ showError(err); }
+}
+function openQuoteRepostModal(pid){
+  document.getElementById('repostmenu-'+pid)?.setAttribute('hidden','');
+  openModal(`
+    <h3 style="margin:0 0 16px">Citer la publication</h3>
+    <div class="field"><textarea id="quoteText" rows="4" placeholder="Ajoutez un commentaire (optionnel)..."></textarea></div>
+    <div id="quoteErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" id="quoteSubmit" onclick="submitQuoteRepost('${pid}')">Republier</button>
+    </div>`);
+}
+async function submitQuoteRepost(pid){
+  const text = document.getElementById('quoteText').value.trim();
+  const btn = document.getElementById('quoteSubmit');
+  btn.disabled = true; btn.textContent = 'Publication...';
+  try{
+    await api.quoteRepost(pid, text);
+    closeModal();
+    showToast('Republié avec citation ✓', 'success');
+    if (typeof render === 'function') render();
+  }catch(err){
+    const errEl = document.getElementById('quoteErr');
+    errEl.textContent = err.message || 'Impossible de republier.';
+    errEl.hidden = false;
+    btn.disabled = false; btn.textContent = 'Republier';
+  }
+}
+
+/* ── Repost banner + embedded quoted-post preview (shared by
+   index.html's postCard() and world.html's worldPostCard()) ── */
+function repostBannerHTML(p){
+  if(!p.isRepost) return '';
+  return `<div style="display:flex;align-items:center;gap:6px;padding:10px 16px 0;color:var(--text-3);font-size:12.5px">
+    🔁 <b style="color:var(--text-2)">${escapeHtml(p.repostedBy.name)}</b> a republié · ${escapeHtml(p.repostedBy.time)}
+  </div>`;
+}
+function quotedPostHTML(p){
+  if(!p.quoteOf) return '';
+  const q = p.quoteOf;
+  return `
+  <div style="margin-top:10px;border:1px solid var(--border);border-radius:10px;padding:10px 12px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <img class="avatar" src="${q.avatarUrl || 'https://i.pravatar.cc/60?u='+encodeURIComponent(q.handle)}" style="width:24px;height:24px">
+      <b style="font-size:13px">${escapeHtml(q.author)}</b>
+      <span style="color:var(--text-3);font-size:12px">${escapeHtml(q.handle)} · ${escapeHtml(q.time)}</span>
+    </div>
+    <div style="font-size:13.5px;color:var(--text-2)">${renderPostText(q.text)}</div>
+    ${q.imageUrl ? `<img src="${q.imageUrl}" style="max-width:100%;border-radius:8px;margin-top:8px;display:block">` : ''}
+    ${q.videoUrl ? `<video src="${q.videoUrl}" controls style="max-width:100%;border-radius:8px;margin-top:8px;display:block"></video>` : ''}
+  </div>`;
+}
+
 /* ── Live user state (populated from Supabase when available) ── */
 const _liveUser = { avatar: MOCK.user.avatar, name: MOCK.user.name, handle: MOCK.user.handle };
 
@@ -172,7 +346,7 @@ function renderTopbar(){
     <a href="index.html" class="brand"><span class="glyph">🌍</span>WorldHub</a>
     <div class="search-box">
       <span>🔍</span>
-      <input type="text" placeholder="Rechercher des personnes, publications, mondes...">
+      <input type="text" id="topbarSearchInput" placeholder="Rechercher des personnes, publications, mondes..." onkeydown="if(event.key==='Enter') handleTopbarSearch(this.value)">
       <span class="kbd">⌘K</span>
     </div>
     <div class="topbar-actions">
@@ -264,6 +438,79 @@ function closeModal(){
   document.removeEventListener('keydown', _modalEscHandler);
 }
 
+/* ---------------- SEARCH (Issue: la barre de recherche de la topbar
+   n'était reliée à rien — elle ne faisait littéralement rien) ---------------- */
+function handleTopbarSearch(query){
+  const q = (query || '').trim();
+  if (!q) return;
+  window.location.href = 'search.html?q=' + encodeURIComponent(q);
+}
+/* ⌘K / Ctrl+K focuses the topbar search box, wherever the user is */
+function _wireSearchShortcut(){
+  if (window._whSearchShortcutWired) return;
+  window._whSearchShortcutWired = true;
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      const input = document.getElementById('topbarSearchInput');
+      if (input) { e.preventDefault(); input.focus(); }
+    }
+  });
+}
+
+/* ================================================================
+   POLL WIDGET (Issue: "📊 Sondage" only ever composed a plain-text
+   block into the post's content — there was no real vote-counting UI.
+   Shared here so both index.html and world.html render/vote the same
+   way. A post only gets a live widget if `p.pollId` is set (see
+   getFeed()/getWorldPosts() above), which only happens when the DB
+   actually has a matching row in `polls`. ================================ */
+function pollPlaceholderHTML(post){
+  if (!post.pollId) return '';
+  return `<div class="poll-widget" id="poll-${post.id}" style="margin-top:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 14px">
+    <div style="font-size:12.5px;color:var(--text-3)">Chargement du sondage...</div>
+  </div>`;
+}
+function _pollOptionRowHTML(postId, poll, opt, totalVotes){
+  const pct = totalVotes ? Math.round((opt.votes / totalVotes) * 100) : 0;
+  const isMine = poll.myVote === opt.id;
+  const voted = !!poll.myVote;
+  return `
+    <div class="poll-option" style="position:relative;margin-bottom:8px;${voted?'':'cursor:pointer'}" ${voted ? '' : `onclick="handlePollVote('${postId}','${poll.id}','${opt.id}')"`}>
+      <div style="position:absolute;inset:0;border-radius:8px;background:${isMine?'var(--accent-soft)':'var(--surface-2)'};width:${voted ? pct : 0}%;transition:width .25s"></div>
+      <div style="position:relative;display:flex;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+        <span>${escapeHtml(opt.label)}${isMine?' ✓':''}</span>
+        ${voted ? `<span style="color:var(--text-3);flex:none">${pct}%</span>` : ''}
+      </div>
+    </div>`;
+}
+async function _hydratePoll(postId){
+  const el = document.getElementById('poll-' + postId);
+  if (!el) return;
+  const poll = await api.getPoll(postId);
+  if (!poll) { el.remove(); return; }
+  const totalVotes = poll.options.reduce((s,o)=>s+o.votes, 0);
+  el.innerHTML = `
+    <div style="font-weight:700;font-size:13.5px;margin-bottom:10px">📊 ${escapeHtml(poll.question)}</div>
+    ${poll.options.map(o=>_pollOptionRowHTML(postId, poll, o, totalVotes)).join('')}
+    <div style="font-size:11.5px;color:var(--text-3);margin-top:2px">${totalVotes} vote${totalVotes===1?'':'s'}</div>`;
+}
+async function handlePollVote(postId, pollId, optionId){
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    const session = await DB.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+  }
+  try {
+    await api.votePoll(pollId, optionId);
+    await _hydratePoll(postId);
+  } catch (err) {
+    showError ? showError(err) : console.error(err);
+  }
+}
+/* Call once after a batch of posts has been injected into the DOM */
+function hydratePollsIn(posts){
+  (posts || []).filter(p => p.pollId).forEach(p => _hydratePoll(p.id));
+}
+
 /* ---------------- MOBILE MENU ---------------- */
 function wireMobileMenu(){
   const btn = document.getElementById('menuToggle');
@@ -293,6 +540,8 @@ function initLayout({ active, rail, mainHTML, noRail=false, wide=false }){
     </div>`;
   wireMobileMenu();
   wireGlobalInteractions();
+  _wireSearchShortcut();
+  _wireFloatingMenuOutsideClick();
   /* Hydrate topbar avatar / name from Supabase (non-blocking) */
   _hydrateCurrentUser();
   /* Hydrate unread message/notification badges from real data.
@@ -389,6 +638,70 @@ function wireGlobalInteractions(){
    All page-level code calls api.* functions; never calls DB.* or
    MOCK.* directly — this makes swapping the backend effortless.
    ================================================================ */
+/* ── Normalise one Supabase `posts` row into the shape the UI expects.
+   Shared by getFeed()/getWorldPosts() (Issue: repost/quote-repost had no
+   UI at all — this is where a repost row gets turned into "show the
+   original post's content, with a small banner on top"). ── */
+function _mapPostRow(p){
+  const isSimpleRepost = !!p.repost_of && !p.content && !!p.original;
+  const base = isSimpleRepost ? p.original : p;
+  const baseAuthor = base.author;
+  return {
+    id:       p.id,
+    /* actionId = the post that likes/comments/edits/reposts actually apply
+       to: the ORIGINAL post for a plain repost, or the row itself otherwise. */
+    actionId: isSimpleRepost ? (p.original?.id || p.repost_of) : p.id,
+    authorId: baseAuthor?.id || null,
+    author:   baseAuthor ? (baseAuthor.first_name + ' ' + (baseAuthor.last_name || '')).trim() : 'Utilisateur',
+    handle:   baseAuthor?.handle || '@user',
+    time:     _relTime(base.created_at),
+    world:    base.world_id || '',
+    text:     base.content || '',
+    likes:    Array.isArray(base.likes)    ? base.likes.length    : 0,
+    comments: Array.isArray(base.comments) ? base.comments.length : 0,
+    commentList: Array.isArray(base.comments) ? base.comments : [],
+    shares:   0,
+    avatarUrl: baseAuthor?.avatar_url || null,
+    imageUrl: base.image_url || null,
+    videoUrl: base.video_url || null,
+    pollId: (Array.isArray(base.polls) ? base.polls[0]?.id : base.polls?.id) || null,
+    isRepost: isSimpleRepost,
+    repostedBy: isSimpleRepost ? {
+      name: p.author ? (p.author.first_name + ' ' + (p.author.last_name || '')).trim() : 'Utilisateur',
+      time: _relTime(p.created_at),
+    } : null,
+    quoteOf: (!isSimpleRepost && p.repost_of && p.original) ? {
+      id: p.original.id,
+      author: p.original.author ? (p.original.author.first_name + ' ' + (p.original.author.last_name || '')).trim() : 'Utilisateur',
+      handle: p.original.author?.handle || '@user',
+      avatarUrl: p.original.author?.avatar_url || null,
+      text: p.original.content || '',
+      imageUrl: p.original.image_url || null,
+      videoUrl: p.original.video_url || null,
+      time: _relTime(p.original.created_at),
+    } : null,
+  };
+}
+
+/* Fetch repost counts/state for a batch of mapped posts and merge them
+   in-place (one query for the whole feed instead of one per post). */
+async function _hydrateRepostStats(mapped){
+  const ids = [...new Set(mapped.map(m => m.actionId).filter(Boolean))];
+  if (!ids.length) return mapped;
+  try {
+    const stats = await DB.getRepostStats(ids);
+    mapped.forEach(m => {
+      const s = stats[m.actionId];
+      m.repostCount = s ? s.count : 0;
+      m.hasReposted = s ? s.reposted : false;
+    });
+  } catch (err) {
+    console.warn('[WorldHub] getRepostStats failed:', err.message);
+    mapped.forEach(m => { m.repostCount = 0; m.hasReposted = false; });
+  }
+  return mapped;
+}
+
 const api = {
 
   /* ── Feed (Issue 4) ── */
@@ -396,23 +709,9 @@ const api = {
     if (typeof DB !== 'undefined' && DB.isConnected) {
       try {
         const rows = await DB.listPosts({ limit: 30 });
-        /* Normalise Supabase rows to the shape the UI expects.
-           Note: id is kept as a real DB id so like/comment/follow
-           actions can be wired to data-post-id in the markup. */
-        return rows.map(p => ({
-          id:       p.id,
-          authorId: p.author?.id || null,
-          author:   p.author ? (p.author.first_name + ' ' + (p.author.last_name || '')).trim() : 'Utilisateur',
-          handle:   p.author?.handle || '@user',
-          time:     _relTime(p.created_at),
-          world:    p.world_id || '',
-          text:     p.content  || '',
-          likes:    Array.isArray(p.likes)    ? p.likes.length    : 0,
-          comments: Array.isArray(p.comments) ? p.comments.length : 0,
-          commentList: Array.isArray(p.comments) ? p.comments : [],
-          shares:   0,
-          avatarUrl: p.author?.avatar_url || null,
-        }));
+        const mapped = rows.map(_mapPostRow);
+        await _hydrateRepostStats(mapped);
+        return mapped;
       } catch (err) {
         console.warn('[WorldHub] getFeed fell back to mock:', err.message);
       }
@@ -455,20 +754,9 @@ const api = {
     if (typeof DB !== 'undefined' && DB.isConnected) {
       try {
         const rows = await DB.listPosts({ worldId });
-        return rows.map(p => ({
-          id:       p.id,
-          authorId: p.author?.id || null,
-          author:   p.author ? (p.author.first_name + ' ' + (p.author.last_name || '')).trim() : 'Utilisateur',
-          handle:   p.author?.handle || '@user',
-          time:     _relTime(p.created_at),
-          world:    p.world_id || '',
-          text:     p.content  || '',
-          likes:    Array.isArray(p.likes)    ? p.likes.length    : 0,
-          comments: Array.isArray(p.comments) ? p.comments.length : 0,
-          commentList: Array.isArray(p.comments) ? p.comments : [],
-          shares:   0,
-          avatarUrl: p.author?.avatar_url || null,
-        }));
+        const mapped = rows.map(_mapPostRow);
+        await _hydrateRepostStats(mapped);
+        return mapped;
       } catch (err) {
         console.warn('[WorldHub] getWorldPosts fell back to mock:', err.message);
       }
@@ -508,6 +796,7 @@ const api = {
         const rows = await DB.listNotifications();
         return rows.map(n => ({
           id:     n.id,
+          type:   n.type || 'system',
           icon:   _notifIcon(n.type),
           color:  _notifColor(n.type),
           /* n.content is user/DB-supplied text -> must be escaped before
@@ -581,15 +870,26 @@ const api = {
         const rows = await DB.listMessages(otherId);
         const me = await DB.getCurrentUser();
         return rows.map(m => ({
+          id: m.id,
           from: m.sender_id === me.id ? 'me' : 'them',
           text: m.content,
           time: _relTime(m.created_at),
+          read: !!m.read_at,
         }));
       } catch (err) {
         console.warn('[WorldHub] getMessages fell back to mock:', err.message);
       }
     }
     return MOCK.chatThread;
+  },
+
+  /* ── Mark a thread's incoming messages as read (Issue: real-time
+     read-receipt ticks need this called whenever a thread is opened) ── */
+  async markMessagesRead(otherId) {
+    if (typeof DB !== 'undefined' && DB.isConnected && otherId) {
+      try { await DB.markMessagesRead(otherId); return true; } catch (err) { console.warn(err.message); }
+    }
+    return false;
   },
 
   /* ── Send message ── */
@@ -601,13 +901,43 @@ const api = {
     return true;
   },
 
-  /* ── Create post (Issue 3, 5: text + image uploads) ── */
-  async createPost(content, worldId, imageUrl) {
+  /* ── Create post (Issue 3, 5: text + image/video uploads) ──
+     Bug fixed: this used to take a single `imageUrl` param, so when a
+     post had ONLY a video, create-post.html was forced to pass the
+     video URL into the image slot — it got saved as `image_url` in the
+     DB and could never render as a real <video>. Now takes both. ── */
+  async createPost(content, worldId, imageUrl, videoUrl) {
     if (typeof DB !== 'undefined' && DB.isConnected) {
-      return DB.createPost({ content, worldId, imageUrl: imageUrl || null });
+      return DB.createPost({ content, worldId, imageUrl: imageUrl || null, videoUrl: videoUrl || null });
     }
-    console.log('createPost->mock', content, imageUrl);
+    console.log('createPost->mock', content, imageUrl, videoUrl);
     return true;
+  },
+
+  /* ── Edit / delete a post (Issue: DB.updatePost/DB.deletePost already
+     existed in supabase.js but no button in the UI ever called them) ── */
+  async updatePost(postId, content) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.updatePost(postId, { content });
+    console.log('updatePost->mock', postId, content);
+    return true;
+  },
+  async deletePost(postId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.deletePost(postId);
+    console.log('deletePost->mock', postId);
+    return true;
+  },
+
+  /* ── Repost / quote-repost (Issue: no real repost feature existed —
+     "🔄 Partager" only ever copied a link to the clipboard) ── */
+  async toggleRepost(postId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.toggleRepost(postId);
+    console.log('toggleRepost->mock', postId);
+    return { reposted: true };
+  },
+  async quoteRepost(postId, text) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.quoteRepost(postId, text);
+    console.log('quoteRepost->mock', postId, text);
+    return { id: 'mock-quote-' + Date.now() };
   },
 
   /* ── Toggle follow ── */
@@ -778,6 +1108,68 @@ const api = {
     return true;
   },
 
+  /* ── Search (Issue: the topbar search box did nothing at all — no
+     query reached the DB, no results page existed). Real search hits
+     posts/profiles/worlds/companies/jobs via DB.searchAll(); mock mode
+     filters the same MOCK arrays client-side so the page still works
+     without Supabase connected. ── */
+  async search(query) {
+    const q = (query || '').trim().toLowerCase();
+    if (!q) return { posts:[], profiles:[], worlds:[], companies:[], jobs:[] };
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try {
+        const r = await DB.searchAll(query);
+        return {
+          posts: r.posts.map(p => ({
+            id: p.id,
+            author: p.author ? (p.author.first_name + ' ' + (p.author.last_name || '')).trim() : 'Utilisateur',
+            avatarUrl: p.author?.avatar_url || null,
+            text: p.content || '', time: _relTime(p.created_at),
+          })),
+          profiles: r.profiles.map(u => ({
+            id: u.id, name: (u.first_name + ' ' + (u.last_name || '')).trim(),
+            handle: u.handle || '@user', avatar: u.avatar_url || 'https://i.pravatar.cc/80',
+          })),
+          worlds: r.worlds.map(w => ({ id: w.id, name: w.name, icon: w.icon || '🌍', members: w.member_count || 0 })),
+          companies: r.companies.map(c => ({ id: c.id, name: c.name, sector: c.sector || '', logo: c.logo_url || null })),
+          jobs: r.jobs.map(j => ({ id: j.id, title: j.title, company: j.company?.name || '', location: j.location || '', type: j.job_type || '' })),
+        };
+      } catch (err) { console.warn('[WorldHub] search fell back to mock:', err.message); }
+    }
+    return {
+      posts: MOCK.posts.filter(p => p.text.toLowerCase().includes(q))
+        .map(p => ({ id:p.id, author:p.author, avatarUrl:null, text:p.text, time:p.time })),
+      profiles: [MOCK.user, ...MOCK.topMembers.map(m=>({name:m.name, handle:'@'+m.name.toLowerCase().replace(' ','.'), avatar:m.avatar}))]
+        .filter(u => (u.name||'').toLowerCase().includes(q) || (u.handle||'').toLowerCase().includes(q)),
+      worlds: MOCK.worlds.filter(w => w.name.toLowerCase().includes(q)),
+      companies: MOCK.companies.filter(c => c.name.toLowerCase().includes(q))
+        .map(c => ({ name:c.name, sector:c.sector, logo:null })),
+      jobs: MOCK.jobs.filter(j => j.title.toLowerCase().includes(q))
+        .map(j => ({ title:j.title, company:j.company, location:j.place, type:j.type })),
+    };
+  },
+
+  /* ── Polls (Issue: "Sondage" only composed plain text into the post —
+     now backed by real polls/poll_options/poll_votes tables when
+     connected). Mock fallback returns null / no-ops since there is no
+     real vote-counting possible without a backend. ── */
+  async createPoll(postId, question, options) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.createPoll(postId, question, options);
+    console.log('createPoll->mock', postId, question, options);
+    return { id: 'mock-poll-' + Date.now() };
+  },
+  async getPoll(postId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try { return await DB.getPollForPost(postId); } catch (err) { console.warn('[WorldHub] getPoll failed:', err.message); }
+    }
+    return null;
+  },
+  async votePoll(pollId, optionId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.votePoll(pollId, optionId);
+    console.log('votePoll->mock', pollId, optionId);
+    return true;
+  },
+
   /* ── Comments (Issue: comment button only ever linked to create-post.html,
      there was no way to actually post a reply) ── */
   async addComment(postId, content) {
@@ -865,17 +1257,17 @@ const api = {
 
 /* ── Notification display helpers (map DB `type` -> icon/color/text) ── */
 function _notifIcon(type){
-  return { like:'❤️', comment:'💬', follow:'➕', mention:'📣', share:'🔄', system:'🌍' }[type] || '🔔';
+  return { like:'❤️', comment:'💬', follow:'➕', mention:'📣', share:'🔄', repost:'🔁', system:'🌍' }[type] || '🔔';
 }
 function _notifColor(type){
-  return { like:'pink', comment:'blue', follow:'accent', mention:'accent', share:'green', system:'yellow' }[type] || 'accent';
+  return { like:'pink', comment:'blue', follow:'accent', mention:'accent', share:'green', repost:'green', system:'yellow' }[type] || 'accent';
 }
 function _notifDefaultText(n){
   const who = n.actor ? (n.actor.first_name + ' ' + (n.actor.last_name || '')).trim() : 'Quelqu\'un';
   const map = {
     like:'a aimé votre publication', comment:'a commenté votre publication',
-    follow:'a commencé à vous suivre', mention:'vous a mentionné dans un commentaire',
-    share:'a partagé votre publication',
+    follow:'a commencé à vous suivre', mention:'vous a mentionné',
+    share:'a partagé votre publication', repost:'a republié votre publication',
   };
   return `${escapeHtml(who)} ${map[n.type] || 'a interagi avec votre contenu'}`;
 }

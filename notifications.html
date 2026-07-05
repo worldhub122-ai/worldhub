@@ -47,31 +47,67 @@ async function handleMarkAllRead(){
   try { await api.markAllNotificationsRead(); } catch (err) { console.warn(err); }
 }
 
+/* ── Notification category filters (Issue: these were plain static
+   rows with no onclick at all — clicking "Mentions", "J'aime", etc.
+   did absolutely nothing). Now they actually filter the already-loaded
+   list client-side, using the notification `type` field returned by
+   api.getNotifications(). ── */
+const NOTIF_FILTERS = [
+  { key:'all',     label:'Toutes'       },
+  { key:'mention', label:'Mentions'     },
+  { key:'comment', label:'Commentaires' },
+  { key:'like',    label:'J’aime'       },
+  { key:'repost',  label:'Republications' },
+  { key:'follow',  label:'Abonnés'      },
+  { key:'system',  label:'Système'      },
+];
+let _allNotifications = [];
+let _activeNotifFilter = 'all';
+
 function filterRail(){
   return `
   <div class="card card-pad">
     <h3 style="margin:0 0 12px;font-size:15px">Filtres</h3>
-    ${['Toutes','Mentions','Commentaires','J’aime','Abonnés','Système'].map((f,i)=>`
-      <div class="row" style="padding:9px 0;justify-content:space-between">
-        <span style="font-size:13.5px;${i===0?'font-weight:700;color:var(--text-1)':'color:var(--text-2)'}">${f}</span>
-        ${i===0?'<span class="pill pill-accent">●</span>':''}
+    ${NOTIF_FILTERS.map(f=>`
+      <div class="row" style="padding:9px 0;justify-content:space-between;cursor:pointer" onclick="setNotifFilter('${f.key}')">
+        <span style="font-size:13.5px;${f.key===_activeNotifFilter?'font-weight:700;color:var(--text-1)':'color:var(--text-2)'}">${f.label}</span>
+        ${f.key===_activeNotifFilter?'<span class="pill pill-accent">●</span>':''}
       </div>`).join('')}
   </div>`;
 }
 
+function _filteredNotifications(){
+  if (_activeNotifFilter === 'all') return _allNotifications;
+  return _allNotifications.filter(n => (n.type || 'system') === _activeNotifFilter);
+}
+
+function setNotifFilter(key){
+  _activeNotifFilter = key;
+  const listEl = document.getElementById('notifListEl');
+  if (listEl) {
+    const filtered = _filteredNotifications();
+    listEl.innerHTML = filtered.length
+      ? filtered.map(notifRow).join('')
+      : `<div class="row" style="padding:24px;justify-content:center;color:var(--text-3)">Aucune notification dans cette catégorie.</div>`;
+  }
+  const railEl = document.querySelector('.rail');
+  if (railEl) railEl.innerHTML = filterRail();
+}
+
 function mainNotif(items){
+  const filtered = _filteredNotifications();
   return `
   <div class="main-col">
     <div class="card">
       <div class="card-head"><h3>Notifications</h3><span class="link" style="margin-right:14px" onclick="handleMarkAllRead()">Tout marquer comme lu</span><span class="link" onclick="location.href='settings.html'">⚙️ Paramètres</span></div>
-      ${items.length ? items.map(notifRow).join('') : `<div class="row" style="padding:24px;justify-content:center;color:var(--text-3)">Aucune notification pour le moment.</div>`}
+      <div id="notifListEl">${filtered.length ? filtered.map(notifRow).join('') : `<div class="row" style="padding:24px;justify-content:center;color:var(--text-3)">Aucune notification pour le moment.</div>`}</div>
     </div>
   </div>`;
 }
 
 async function render(){
-  const items = await api.getNotifications();
-  initLayout({ active:'notifications', mainHTML: mainNotif(items), rail: filterRail() });
+  _allNotifications = await api.getNotifications();
+  initLayout({ active:'notifications', mainHTML: mainNotif(_allNotifications), rail: filterRail() });
 }
 render();
 

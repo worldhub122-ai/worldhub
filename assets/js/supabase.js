@@ -100,12 +100,23 @@ const DB = (() => {
   }
 
   // ---------------- Posts ----------------
+  // عمود select مشترك — يتضمن الآن repost_of + المنشور الأصلي (original)
+  // حتى تقدر الواجهة تعرض "فلان أعاد نشر منشور علان" مع بطاقة المنشور
+  // الأصلي مضمّنة (Issue: إعادة النشر ما كانت موجودة إطلاقاً).
+  const POST_SELECT = `id, content, image_url, video_url, world_id, created_at, edited_at, repost_of,
+    author:profiles(id, first_name, last_name, handle, avatar_url),
+    likes(user_id),
+    comments(id, content, created_at, author:profiles(id, first_name, last_name, handle, avatar_url)),
+    polls(id, question),
+    original:posts!repost_of(id, content, image_url, video_url, created_at,
+      author:profiles(id, first_name, last_name, handle, avatar_url))`;
+
   // يرجع منشورات مع اسم الكاتب، عدد الإعجابات، وهل المستخدم الحالي أعجب بها
   async function listPosts({ worldId=null, authorId=null, limit=30 } = {}){
     assertConnected();
     let q = sbClient
       .from('posts')
-      .select('id, content, image_url, video_url, world_id, created_at, edited_at, author:profiles(id, first_name, last_name, handle, avatar_url), likes(user_id), comments(id, content, created_at, author:profiles(id, first_name, last_name, handle, avatar_url))')
+      .select(POST_SELECT)
       .order('created_at', { ascending:false })
       .limit(limit);
     if(worldId) q = q.eq('world_id', worldId);
@@ -113,6 +124,54 @@ const DB = (() => {
     const { data, error } = await q;
     if(error) throw error;
     return data;
+  }
+
+  // ── @Mentions: يحلل النص بحثاً عن @handle، يربطها بمستخدمين حقيقيين،
+  // ويخزّنها في جدول mentions (الإشعار يُنشأ تلقائياً عبر Trigger بالقاعدة) ──
+  function _extractHandles(text){
+    if(!text) return [];
+    const matches = text.match(/@([a-zA-Z0-9_.]{2,32})/g) || [];
+    return [...new Set(matches.map(m => m.slice(1).toLowerCase()))];
+  }
+  async function _saveMentions(sourceType, sourceId, content, actorId){
+    const handles = _extractHandles(content);
+    if(!handles.length) return;
+    try{
+      const { data: users } = await sbClient.from('profiles').select('id, handle')
+        .in('handle', handles.map(h => '@'+h));
+      const rows = (users||[])
+        .filter(u => u.id !== actorId)
+        .map(u => ({ source_type:sourceType, source_id:sourceId, mentioned_user_id:u.id, actor_id:actorId }));
+      if(rows.length){
+        await sbClient.from('mentions').upsert(rows, { onConflict:'source_type,source_id,mentioned_user_id', ignoreDuplicates:true });
+      }
+    }catch(err){ console.warn('[WorldHub] _saveMentions failed:', err.message); }
+  }
+
+  // ── #Hashtags: يحلل النص بحثاً عن #tag، ينشئها إن لم توجد، ويربطها بالمنشور ──
+  function _extractHashtags(text){
+    if(!text) return [];
+    const matches = text.match(/#([\p{L}0-9_]{2,50})/gu) || [];
+    return [...new Set(matches.map(m => m.slice(1).toLowerCase()))];
+  }
+  async function _saveHashtags(postId, content){
+    const tags = _extractHashtags(content);
+    try{
+      // امسح الربط القديم أولاً (مفيد عند التعديل: منشور مُعدَّل قد يحذف وسماً)
+      await sbClient.from('post_hashtags').delete().eq('post_id', postId);
+      if(!tags.length) return;
+      const { data: existing } = await sbClient.from('hashtags').select('id, tag').in('tag', tags);
+      const existingMap = new Map((existing||[]).map(h => [h.tag, h.id]));
+      const missing = tags.filter(t => !existingMap.has(t));
+      if(missing.length){
+        const { data: inserted, error } = await sbClient.from('hashtags')
+          .insert(missing.map(tag => ({ tag }))).select('id, tag');
+        if(!error) (inserted||[]).forEach(h => existingMap.set(h.tag, h.id));
+      }
+      const links = tags.filter(t => existingMap.has(t))
+        .map(t => ({ post_id:postId, hashtag_id:existingMap.get(t) }));
+      if(links.length) await sbClient.from('post_hashtags').insert(links);
+    }catch(err){ console.warn('[WorldHub] _saveHashtags failed:', err.message); }
   }
 
   async function createPost({ content, worldId, imageUrl=null, videoUrl=null }){
@@ -123,6 +182,8 @@ const DB = (() => {
       .insert({ author_id:user.id, content, world_id:worldId, image_url:imageUrl, video_url:videoUrl })
       .select().single();
     if(error) throw error;
+    // لا تُفشل نشر المنشور إذا فشل استخراج المنشن/الوسم — هذه إثراء إضافي فقط
+    await Promise.all([ _saveMentions('post', data.id, content, user.id), _saveHashtags(data.id, content) ]);
     return data;
   }
 
@@ -134,6 +195,10 @@ const DB = (() => {
     if(videoUrl !== undefined) patch.video_url = videoUrl;
     const { data, error } = await sbClient.from('posts').update(patch).eq('id', postId).select().single();
     if(error) throw error;
+    if(content !== undefined){
+      const user = await getCurrentUser();
+      await Promise.all([ _saveMentions('post', postId, content, user?.id), _saveHashtags(postId, content) ]);
+    }
     return data;
   }
 
@@ -141,6 +206,62 @@ const DB = (() => {
     assertConnected();
     const { error } = await sbClient.from('posts').delete().eq('id', postId);
     if(error) throw error;
+  }
+
+  // ---------------- Reposts (Issue: زر "🔄" كان "مشاركة رابط" بس، ما
+  // كان في أي شكل لإعادة النشر الحقيقية داخل المنصة) ----------------
+  // Repost بسيط: صف جديد content='' + repost_of=originalId. الضغط ثانية
+  // على نفس المنشور يلغيه (يحذف صف الـ repost). قيد فريد بالقاعدة يمنع
+  // تكراره لنفس المستخدم لنفس المنشور.
+  async function toggleRepost(originalPostId){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('Vous devez être connecté(e) pour republier.');
+    const { data: existing } = await sbClient.from('posts')
+      .select('id').eq('repost_of', originalPostId).eq('author_id', user.id).eq('content', '').maybeSingle();
+    if(existing){
+      await sbClient.from('posts').delete().eq('id', existing.id);
+      return { reposted:false };
+    }
+    const { error } = await sbClient.from('posts')
+      .insert({ author_id:user.id, content:'', repost_of:originalPostId });
+    if(error) throw error;
+    return { reposted:true };
+  }
+
+  // Quote-Repost: منشور جديد فيه نص + repost_of. يمكن تكراره (كل اقتباس
+  // منشور مستقل)، ويحلَّل نصه لمنشن/وسوم كأي منشور عادي.
+  async function quoteRepost(originalPostId, quoteContent){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('Vous devez être connecté(e) pour republier.');
+    const { data, error } = await sbClient.from('posts')
+      .insert({ author_id:user.id, content:quoteContent||'', repost_of:originalPostId })
+      .select().single();
+    if(error) throw error;
+    await Promise.all([ _saveMentions('post', data.id, quoteContent, user.id), _saveHashtags(data.id, quoteContent) ]);
+    return data;
+  }
+
+  // يرجع { [postId]: { count, reposted } } لمجموعة منشورات دفعة وحدة
+  // (استعلام واحد بدل استعلام لكل منشور).
+  async function getRepostStats(postIds){
+    assertConnected();
+    if(!postIds || !postIds.length) return {};
+    const user = await getCurrentUser();
+    const { data, error } = await sbClient.from('posts')
+      .select('id, repost_of, author_id, content')
+      .in('repost_of', postIds);
+    if(error) throw error;
+    const stats = {};
+    postIds.forEach(id => { stats[id] = { count:0, reposted:false }; });
+    (data||[]).forEach(row => {
+      const s = stats[row.repost_of];
+      if(!s) return;
+      s.count++;
+      if(user && row.author_id === user.id && row.content === '') s.reposted = true;
+    });
+    return stats;
   }
 
   // يرفع ملفاً (صورة أو فيديو) لمنشور إلى Storage ويرجع رابطه العام
@@ -246,7 +367,7 @@ const DB = (() => {
     if(!user) throw new Error('Vous devez être connecté(e).');
     const { data, error } = await sbClient
       .from('saved_posts')
-      .select('created_at, post:posts(id, content, image_url, video_url, world_id, created_at, edited_at, author:profiles(id, first_name, last_name, handle, avatar_url), likes(user_id), comments(id, content, created_at, author:profiles(id, first_name, last_name, handle, avatar_url)))')
+      .select(`created_at, post:posts(${POST_SELECT})`)
       .eq('user_id', user.id)
       .order('created_at', { ascending:false });
     if(error) throw error;
@@ -257,7 +378,7 @@ const DB = (() => {
     assertConnected();
     const { data, error } = await sbClient
       .from('posts')
-      .select('id, content, image_url, video_url, world_id, created_at, edited_at, author:profiles(id, first_name, last_name, handle, avatar_url), likes(user_id), comments(id, content, created_at, author:profiles(id, first_name, last_name, handle, avatar_url))')
+      .select(POST_SELECT)
       .eq('id', postId).single();
     if(error) throw error;
     return data;
@@ -287,6 +408,7 @@ const DB = (() => {
       .insert({ post_id:postId, author_id:user.id, content })
       .select('*, author:profiles(id, first_name, last_name, handle, avatar_url)').single();
     if(error) throw error;
+    await _saveMentions('comment', data.id, content, user.id);
     return data;
   }
 
@@ -476,6 +598,42 @@ const DB = (() => {
     return user ? data.filter(p=>p.id !== user.id) : data;
   }
 
+  // ---------------- Recherche globale (Issue: le champ de recherche
+  // dans la topbar n'était relié à rien du tout) ----------------
+  // Cherche en parallèle dans posts / profils / mondes / entreprises / offres
+  // et retourne un objet groupé par catégorie. Chaque requête est indépendante
+  // (Promise.allSettled) pour qu'une table manquante ne casse pas les autres.
+  async function searchAll(query, limit=6){
+    assertConnected();
+    const q = (query || '').trim();
+    if(!q) return { posts:[], profiles:[], worlds:[], companies:[], jobs:[] };
+
+    const [posts, profiles, worlds, companies, jobs] = await Promise.allSettled([
+      sbClient.from('posts')
+        .select('id, content, created_at, author:profiles(id, first_name, last_name, handle, avatar_url)')
+        .ilike('content', `%${q}%`).order('created_at', { ascending:false }).limit(limit),
+      searchProfiles(q),
+      sbClient.from('worlds').select('id, name, icon, member_count').ilike('name', `%${q}%`).limit(limit),
+      sbClient.from('companies').select('id, name, sector, logo_url').ilike('name', `%${q}%`).limit(limit),
+      sbClient.from('jobs').select('id, title, location, job_type, company:companies(name)').ilike('title', `%${q}%`).eq('status','open').limit(limit),
+    ]);
+
+    const unwrap = (settled, isRaw=true) => {
+      if(settled.status !== 'fulfilled') return [];
+      const v = settled.value;
+      if(!isRaw) return v || []; // searchProfiles already returns a plain array
+      return v.error ? [] : (v.data || []);
+    };
+
+    return {
+      posts:     unwrap(posts),
+      profiles:  unwrap(profiles, false),
+      worlds:    unwrap(worlds),
+      companies: unwrap(companies),
+      jobs:      unwrap(jobs),
+    };
+  }
+
   // ---------------- Worlds (membership) ----------------
   async function joinWorld(worldId){
     assertConnected();
@@ -643,6 +801,59 @@ const DB = (() => {
     return data;
   }
 
+  // ---------------- Polls (Issue: the "Sondage" chip only composed a
+  // plain-text block into the post; there was no real vote-counting
+  // backend at all) ----------------
+  async function createPoll(postId, question, optionLabels){
+    assertConnected();
+    const { data: poll, error: pollErr } = await sbClient.from('polls')
+      .insert({ post_id: postId, question }).select().single();
+    if(pollErr) throw pollErr;
+    const rows = optionLabels.map((label, i) => ({ poll_id: poll.id, label, position: i }));
+    const { error: optErr } = await sbClient.from('poll_options').insert(rows);
+    if(optErr) throw optErr;
+    return poll;
+  }
+
+  // Returns { id, question, options:[{id,label,votes}], myVote } or null if this post has no poll
+  async function getPollForPost(postId){
+    assertConnected();
+    const { data: poll, error } = await sbClient.from('polls')
+      .select('id, question, post_id').eq('post_id', postId).maybeSingle();
+    if(error) throw error;
+    if(!poll) return null;
+
+    const { data: options, error: optErr } = await sbClient.from('poll_options')
+      .select('id, label, position, poll_votes(count)')
+      .eq('poll_id', poll.id).order('position');
+    if(optErr) throw optErr;
+
+    const user = await getCurrentUser();
+    let myVote = null;
+    if(user){
+      const { data: voteRow } = await sbClient.from('poll_votes')
+        .select('option_id').eq('poll_id', poll.id).eq('user_id', user.id).maybeSingle();
+      myVote = voteRow?.option_id || null;
+    }
+    return {
+      id: poll.id,
+      question: poll.question,
+      options: (options || []).map(o => ({ id:o.id, label:o.label, votes: o.poll_votes?.[0]?.count || 0 })),
+      myVote,
+    };
+  }
+
+  async function votePoll(pollId, optionId){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('Vous devez être connecté(e) pour voter.');
+    const { data, error } = await sbClient.from('poll_votes')
+      .upsert({ poll_id:pollId, option_id:optionId, user_id:user.id }, { onConflict:'poll_id,user_id' })
+      .select().single();
+    if(error) throw error;
+    return data;
+  }
+
   // ---------------- Dashboard ----------------
   async function getDashboardSummary(){
     assertConnected();
@@ -663,11 +874,12 @@ const DB = (() => {
     signUp, signIn, signOut, signInWithOAuth, getSession, getCurrentUser,
     getProfile, updateProfile, getFollowCounts, uploadAvatar, uploadCover,
     listPosts, createPost, updatePost, deletePost, uploadPostMedia,
+    toggleRepost, quoteRepost, getRepostStats,
     toggleLike, addComment, toggleFollow,
     toggleSavePost, listSavedPostIds, listSavedPosts, getPost,
     listConversations, listMessages, sendMessage, markMessagesRead,
     subscribeToIncomingMessages, subscribeToReadReceipts, typingChannel, removeChannel,
-    searchProfiles,
+    searchProfiles, searchAll,
     listNotifications, markNotificationRead, markAllNotificationsRead, getUnreadNotificationCount,
     listWorlds, getUnreadMessageCount,
     joinWorld, leaveWorld, isWorldMember,
@@ -675,6 +887,7 @@ const DB = (() => {
     listJobs, createJob, applyToJob,
     listEvents, createEvent, rsvpEvent,
     listListings, createListing, orderListing,
+    createPoll, getPollForPost, votePoll,
     getDashboardSummary, getDailyInteractions,
   };
 })();

@@ -45,6 +45,7 @@ function mainCreate(){
       <div class="field">
         <label>Contenu</label>
         <textarea id="postText" rows="5" placeholder="Quoi de neuf ?" oninput="document.getElementById('previewText').textContent=this.value||'Quoi de neuf ?'"></textarea>
+        <div style="font-size:11.5px;color:var(--text-3);margin-top:4px">Astuce : utilisez @nom pour mentionner quelqu'un et #motclé pour un hashtag.</div>
       </div>
       <div class="field">
         <label>Partager dans</label>
@@ -176,9 +177,12 @@ async function handleVideoSelect(evt){
 }
 
 /* ── Poll builder (Issue: "Sondage" chip existed but did nothing).
-   There is no dedicated polls table in the schema yet, so the poll is
-   composed into the post's text content as a clearly-marked block —
-   this keeps it real and working today without inventing a fake backend. ── */
+   Now backed by real `polls`/`poll_options`/`poll_votes` tables
+   (schema_polls.sql) when Supabase is connected — the post is created
+   first, then the poll rows are created against its id. Without a
+   backend (mock mode) there's still no real vote counting possible, so
+   we fall back to composing the question/options into the post text
+   just so the content isn't silently lost. ── */
 let _pollOptionCount = 0;
 function togglePoll(){
   const el = document.getElementById('pollBuilder');
@@ -241,9 +245,17 @@ function toggleAiSuggestions(){
 }
 
 async function handlePublish(){
-  const pollText = buildPollText();
-  const text = document.getElementById('postText').value.trim() + pollText;
-  if (!text.trim() && _uploadedImageUrls.length === 0 && !_uploadedVideoUrl){
+  const isConnected = typeof DB !== 'undefined' && DB.isConnected;
+  const pollEl = document.getElementById('pollBuilder');
+  const pollQuestion = pollEl.hidden ? '' : document.getElementById('pollQuestion').value.trim();
+  const pollOptionsList = pollEl.hidden ? [] : Array.from(document.querySelectorAll('#pollOptions input')).map(i=>i.value.trim()).filter(Boolean);
+  const hasValidPoll = !pollEl.hidden && pollQuestion && pollOptionsList.length >= 2;
+  /* Without a real backend there's no way to actually count votes, so
+     mock mode keeps the old plain-text fallback rather than silently
+     dropping the poll content. Connected mode creates real rows instead. */
+  const pollTextFallback = (!isConnected && hasValidPoll) ? buildPollText() : '';
+  const text = document.getElementById('postText').value.trim() + pollTextFallback;
+  if (!text.trim() && !hasValidPoll && _uploadedImageUrls.length === 0 && !_uploadedVideoUrl){
     const errEl = document.getElementById('fileErr');
     errEl.textContent = 'Ajoutez du texte, une image ou une vidéo avant de publier.';
     errEl.hidden = false;
@@ -253,7 +265,15 @@ async function handlePublish(){
   btn.disabled = true;
   btn.textContent = 'Publication...';
   try {
-    await api.createPost(text, null, _uploadedImageUrls[0] || _uploadedVideoUrl || null);
+    const post = await api.createPost(text, null, _uploadedImageUrls[0] || null, _uploadedVideoUrl || null);
+    if (hasValidPoll && isConnected && post?.id) {
+      try {
+        await api.createPoll(post.id, pollQuestion, pollOptionsList);
+      } catch (pollErr) {
+        console.warn('[WorldHub] Poll creation failed:', pollErr.message);
+        showToast('Publication créée, mais le sondage n\'a pas pu être enregistré.', 'error');
+      }
+    }
     location.href = 'index.html';
   } catch (err) {
     const errEl = document.getElementById('fileErr');

@@ -25,6 +25,18 @@
    time, unread, otherId). */
 let _conversations = [];
 let _activeOtherId = null;
+let _myUserId = null;
+
+/* ── Realtime plumbing (Issue: DB.subscribeToIncomingMessages,
+   DB.subscribeToReadReceipts and DB.typingChannel already existed in
+   supabase.js — fully working — but nothing on this page ever called
+   them. Messages only ever appeared after a manual page reload, there
+   was no live "typing..." indicator, and read ticks never updated. ── */
+let _incomingChannel = null;
+let _readChannel = null;
+let _typingChannel = null;
+let _typingHideTimer = null;
+let _typingBroadcastTimer = null;
 
 function chatList(){
   return _conversations.map((c,i)=>`
@@ -42,9 +54,9 @@ function chatList(){
 }
 function chatBubbles(thread){
   return thread.map(m=>`
-    <div style="display:flex;flex-direction:column;align-items:${m.from==='me'?'flex-end':'flex-start'}">
+    <div class="bubble-wrap" data-msg-id="${m.id ?? ''}" style="display:flex;flex-direction:column;align-items:${m.from==='me'?'flex-end':'flex-start'}">
       <div class="bubble ${m.from==='me'?'out':'in'}">${escapeHtml(m.text)}</div>
-      <span class="bubble-time">${escapeHtml(m.time)}</span>
+      <span class="bubble-time">${escapeHtml(m.time)}${m.from==='me' ? ` · <span class="read-tick" style="color:${m.read?'var(--accent)':'var(--text-3)'}">${m.read?'✓✓':'✓'}</span>` : ''}</span>
     </div>`).join('');
 }
 
@@ -61,7 +73,7 @@ function shellHTML(active, thread){
       <div class="chat-main">
         <div class="chat-head">
           <div style="position:relative"><img class="avatar" src="${active.avatar}" style="width:38px;height:38px"><span class="online-dot" style="position:absolute;bottom:0;right:0"></span></div>
-          <div><div style="font-weight:700;font-size:14.5px">${escapeHtml(active.name)}</div><div style="font-size:12px;color:var(--green)">En ligne</div></div>
+          <div><div style="font-weight:700;font-size:14.5px">${escapeHtml(active.name)}</div><div style="font-size:12px;color:var(--green)" id="chatHeadStatus">En ligne</div></div>
           <div style="margin-left:auto;display:flex;gap:8px">
             <span class="icon-btn" onclick="handleCallAction('audio')">📞</span><span class="icon-btn" onclick="handleCallAction('video')">🎥</span><span class="icon-btn" onclick="toggleChatInfo()">ℹ️</span>
           </div>
@@ -69,7 +81,7 @@ function shellHTML(active, thread){
         <div class="chat-body" id="chatBody">${chatBubbles(thread)}</div>
         <div class="chat-input-bar">
           <span class="icon-btn" onclick="handleAttachFile()">📎</span>
-          <input id="msgInput" placeholder="Écrivez votre message..." onkeydown="if(event.key==='Enter') sendCurrentMessage()">
+          <input id="msgInput" placeholder="Écrivez votre message..." oninput="handleTypingInput()" onkeydown="if(event.key==='Enter') sendCurrentMessage()">
           <button class="btn btn-primary btn-sm" onclick="sendCurrentMessage()">Envoyer</button>
         </div>
       </div>
@@ -96,6 +108,11 @@ async function openConversation(otherId){
   if (!active) return;
   const thread = await api.getMessages(active.otherId);
   initLayout({ active:'messages', mainHTML: shellHTML(active, thread), noRail:true, wide:true });
+  /* Opening a thread means I've now read the other person's messages */
+  await api.markMessagesRead(active.otherId);
+  const c = _conversations.find(c => String(c.otherId) === String(active.otherId));
+  if (c) c.unread = 0;
+  _setupTypingChannel(active.otherId);
 }
 
 /* Calls, file attachments (Issues: 📞/🎥/📎 had no click handler and did
@@ -118,12 +135,73 @@ async function sendCurrentMessage(){
   if (!text || !_activeOtherId) return;
   input.value = '';
   const body = document.getElementById('chatBody');
-  if (body) body.insertAdjacentHTML('beforeend', chatBubbles([{ from:'me', text, time:'à l\'instant' }]));
   try {
-    await api.sendMessage(_activeOtherId, text);
+    const sent = await api.sendMessage(_activeOtherId, text);
+    if (body) body.insertAdjacentHTML('beforeend', chatBubbles([{ id: sent?.id, from:'me', text, time:'à l\'instant', read:false }]));
+    body.scrollTop = body.scrollHeight;
   } catch (err) {
     showError ? showError(err) : console.error(err);
   }
+}
+
+/* ── Typing indicator: broadcast-only channel (nothing stored in the
+   DB), re-created every time the open conversation changes since it's
+   scoped to a single pair of users. ── */
+function _setupTypingChannel(otherId){
+  if (typeof DB === 'undefined' || !DB.isConnected || !_myUserId || !otherId) return;
+  if (_typingChannel) { DB.removeChannel(_typingChannel); _typingChannel = null; }
+  _typingChannel = DB.typingChannel(_myUserId, otherId);
+  _typingChannel
+    .on('broadcast', { event: 'typing' }, () => {
+      const statusEl = document.getElementById('chatHeadStatus');
+      if (!statusEl) return;
+      statusEl.textContent = 'est en train d\'écrire...';
+      clearTimeout(_typingHideTimer);
+      _typingHideTimer = setTimeout(() => { statusEl.textContent = 'En ligne'; }, 2500);
+    })
+    .subscribe();
+}
+function handleTypingInput(){
+  if (!_typingChannel) return;
+  /* Throttle: only broadcast at most once every 1.5s while typing */
+  if (_typingBroadcastTimer) return;
+  _typingChannel.send({ type:'broadcast', event:'typing', payload:{} });
+  _typingBroadcastTimer = setTimeout(() => { _typingBroadcastTimer = null; }, 1500);
+}
+
+/* ── Live incoming messages: if it's for the open thread, append it
+   instantly; otherwise just refresh the conversation list so the
+   preview/unread badge updates without a manual reload. ── */
+async function _handleIncomingMessage(row){
+  if (String(row.sender_id) === String(_activeOtherId)) {
+    const body = document.getElementById('chatBody');
+    if (body) {
+      body.insertAdjacentHTML('beforeend', chatBubbles([{ id: row.id, from:'them', text: row.content, time:'à l\'instant' }]));
+      body.scrollTop = body.scrollHeight;
+    }
+    await api.markMessagesRead(_activeOtherId);
+  } else {
+    showToast('Nouveau message reçu', 'info');
+  }
+  _conversations = await api.getConversations();
+  const listPane = document.getElementById('chatListPane');
+  if (listPane) {
+    listPane.innerHTML = `
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border-soft)">
+        <div class="search-box" style="max-width:none"><span>🔍</span><input placeholder="Rechercher des messages..."></div>
+      </div>
+      ${chatList()}`;
+  }
+}
+
+/* ── Read receipts: when the other person reads what I sent them,
+   flip my sent bubbles' ✓ to ✓✓ for the open thread. ── */
+function _handleReadReceipt(row){
+  if (String(row.recipient_id) !== String(_activeOtherId)) return;
+  document.querySelectorAll('.bubble-wrap .read-tick').forEach(tick => {
+    tick.textContent = '✓✓';
+    tick.style.color = 'var(--accent)';
+  });
 }
 
 async function render(){
@@ -132,8 +210,31 @@ async function render(){
   _activeOtherId = active.otherId ?? null;
   const thread = await api.getMessages(active.otherId);
   initLayout({ active:'messages', mainHTML: shellHTML(active, thread), noRail:true, wide:true });
+  if (active.otherId) await api.markMessagesRead(active.otherId);
+
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    try {
+      const me = await DB.getCurrentUser();
+      _myUserId = me?.id || null;
+      if (_myUserId) {
+        _incomingChannel = DB.subscribeToIncomingMessages(_myUserId, (row) => { _handleIncomingMessage(row); });
+        _readChannel = DB.subscribeToReadReceipts(_myUserId, (row) => { _handleReadReceipt(row); });
+        _setupTypingChannel(active.otherId);
+      }
+    } catch (err) {
+      console.warn('[WorldHub] Realtime messaging setup failed:', err.message);
+    }
+  }
 }
 render();
+
+/* Clean up realtime channels when leaving the page */
+window.addEventListener('beforeunload', () => {
+  if (typeof DB === 'undefined' || !DB.isConnected) return;
+  if (_incomingChannel) DB.removeChannel(_incomingChannel);
+  if (_readChannel) DB.removeChannel(_readChannel);
+  if (_typingChannel) DB.removeChannel(_typingChannel);
+});
 
 })();
 </script>
