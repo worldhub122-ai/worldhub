@@ -15,6 +15,10 @@
 <script src="assets/js/auth-guard.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
+(async function() {
+  const _session = await requireAuth();
+  if (!_session) return;
+
 function jobCard(j){
   return `
   <div class="card card-pad" style="display:flex;gap:14px;align-items:flex-start">
@@ -59,6 +63,8 @@ function mainJobs(){
   </div>`;
 }
 initLayout({ active:'jobs', mainHTML: mainJobs(), rail: jobsRail() });
+
+})();
 </script>
 </body>
 </html>

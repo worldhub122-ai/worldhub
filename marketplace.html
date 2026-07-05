@@ -15,6 +15,10 @@
 <script src="assets/js/auth-guard.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
+(async function() {
+  const _session = await requireAuth();
+  if (!_session) return;
+
 function listingCard(l){
   return `
   <div class="card" style="overflow:hidden">
@@ -56,6 +60,8 @@ function mainMarket(){
   </div>`;
 }
 initLayout({ active:'marketplace', mainHTML: mainMarket(), rail: marketRail() });
+
+})();
 </script>
 </body>
 </html>

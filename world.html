@@ -15,6 +15,10 @@
 <script src="assets/js/auth-guard.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
+(async function() {
+  const _session = await requireAuth();
+  if (!_session) return;
+
 function worldRail(){
   return `
   <div class="card card-pad">
@@ -81,6 +85,8 @@ function mainWorld(){
   </div>`;
 }
 initLayout({ active:'programming', mainHTML: mainWorld(), rail: worldRail() });
+
+})();
 </script>
 </body>
 </html>

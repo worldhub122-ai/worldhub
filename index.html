@@ -15,6 +15,10 @@
 <script src="assets/js/auth-guard.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
+(async function() {
+  const _session = await requireAuth();
+  if (!_session) return;
+
 function postCard(p){
   return `
   <div class="post">
@@ -80,6 +84,8 @@ async function render(){
   initLayout({ active:'home', mainHTML });
 }
 render();
+
+})();
 </script>
 </body>
 </html>

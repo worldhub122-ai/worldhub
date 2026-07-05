@@ -15,6 +15,10 @@
 <script src="assets/js/auth-guard.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
+(async function() {
+  const _session = await requireAuth();
+  if (!_session) return;
+
 function eventCard(e){
   return `
   <div class="card card-pad" style="display:flex;gap:16px;align-items:flex-start">
@@ -61,6 +65,8 @@ function mainEvents(){
   </div>`;
 }
 initLayout({ active:'events', mainHTML: mainEvents(), rail: eventsRail() });
+
+})();
 </script>
 </body>
 </html>
