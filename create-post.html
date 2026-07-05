@@ -29,7 +29,7 @@ function previewCard(){
         <div><div class="u-name">${MOCK.user.name}</div><div class="u-meta">À l’instant</div></div>
       </div>
       <div class="post-text" id="previewText" style="color:var(--text-3)">Quoi de neuf ?</div>
-      <div id="previewMedia"></div>
+      <div id="previewMedia" style="margin-top:8px"></div>
       <div class="post-actions">
         <div class="a-btn">🤍 J’aime</div><div class="a-btn">💬 Commenter</div><div class="a-btn">🔄 Partager</div>
       </div>
@@ -53,18 +53,91 @@ function mainCreate(){
           ${MOCK.worlds.map(w=>`<option>${w.name}</option>`).join('')}
         </select>
       </div>
+      <div id="fileErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+      <input type="file" id="imageInput" accept="image/*" multiple hidden onchange="handleImageSelect(event)">
       <div class="composer-actions" style="margin-bottom:16px">
-        <div class="chip blue">🖼️ Image</div>
+        <div class="chip blue" onclick="document.getElementById('imageInput').click()">🖼️ Image</div>
         <div class="chip">🎬 Vidéo</div>
         <div class="chip green">📊 Sondage</div>
         <div class="chip pink">🤖 Assistant IA</div>
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end">
         <button class="btn btn-ghost" onclick="location.href='index.html'">Annuler</button>
-        <button class="btn btn-primary" onclick="api.createPost(document.getElementById('postText').value).then(()=>location.href='index.html')">Publier</button>
+        <button class="btn btn-primary" id="btnPublish" onclick="handlePublish()">Publier</button>
       </div>
     </div>
   </div>`;
+}
+
+/* ── Image selection: validate type/size, upload each to Supabase
+   Storage, show previews, and surface errors instead of failing
+   silently (Issues: file validation, max size, failed-upload errors) ── */
+const MAX_FILE_MB = 8;
+const ALLOWED_TYPES = ['image/jpeg','image/png','image/webp','image/gif'];
+let _uploadedImageUrls = [];
+
+async function handleImageSelect(evt){
+  const files = Array.from(evt.target.files || []);
+  const errEl = document.getElementById('fileErr');
+  errEl.hidden = true;
+  const preview = document.getElementById('previewMedia');
+  for (const file of files){
+    if (!ALLOWED_TYPES.includes(file.type)){
+      errEl.textContent = `Format non supporté: ${file.name}. Utilisez JPG, PNG, WEBP ou GIF.`;
+      errEl.hidden = false;
+      continue;
+    }
+    if (file.size > MAX_FILE_MB * 1024 * 1024){
+      errEl.textContent = `"${file.name}" dépasse la taille maximale de ${MAX_FILE_MB} Mo.`;
+      errEl.hidden = false;
+      continue;
+    }
+    /* local preview immediately, real URL once upload resolves */
+    const localUrl = URL.createObjectURL(file);
+    const img = document.createElement('img');
+    img.src = localUrl;
+    img.style.cssText = 'max-width:100%;border-radius:10px;margin-top:6px;opacity:.5';
+    preview.appendChild(img);
+    try {
+      if (typeof DB !== 'undefined' && DB.isConnected){
+        const url = await DB.uploadPostMedia(file);
+        _uploadedImageUrls.push(url);
+        img.src = url;
+        img.style.opacity = '1';
+      } else {
+        /* no backend connected: keep local preview only */
+        _uploadedImageUrls.push(localUrl);
+        img.style.opacity = '1';
+      }
+    } catch (err) {
+      img.remove();
+      errEl.textContent = `Échec de l'envoi de "${file.name}": ${err.message || 'erreur inconnue'}`;
+      errEl.hidden = false;
+    }
+  }
+}
+
+async function handlePublish(){
+  const text = document.getElementById('postText').value.trim();
+  if (!text && _uploadedImageUrls.length === 0){
+    const errEl = document.getElementById('fileErr');
+    errEl.textContent = 'Ajoutez du texte ou une image avant de publier.';
+    errEl.hidden = false;
+    return;
+  }
+  const btn = document.getElementById('btnPublish');
+  btn.disabled = true;
+  btn.textContent = 'Publication...';
+  try {
+    await api.createPost(text, null, _uploadedImageUrls[0] || null);
+    location.href = 'index.html';
+  } catch (err) {
+    const errEl = document.getElementById('fileErr');
+    errEl.textContent = err.message || 'Impossible de publier. Réessayez.';
+    errEl.hidden = false;
+    btn.disabled = false;
+    btn.textContent = 'Publier';
+  }
 }
 initLayout({ active:'create', mainHTML: mainCreate(), rail: previewCard() });
 

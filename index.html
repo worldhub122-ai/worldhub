@@ -15,30 +15,42 @@
 <script src="assets/js/auth-guard.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
-(async function() {
-  const _session = await requireAuth();
-  if (!_session) return;
-
 function postCard(p){
   return `
   <div class="post">
     <div class="post-head">
-      <img class="avatar" src="https://i.pravatar.cc/80?u=${p.handle}" style="width:40px;height:40px">
+      <img class="avatar" src="${p.avatarUrl || ('https://i.pravatar.cc/80?u=' + encodeURIComponent(p.handle))}" style="width:40px;height:40px">
       <div>
-        <div class="u-name">${p.author} <span class="badge-world">${p.world}</span></div>
-        <div class="u-meta">${p.handle} · ${p.time}</div>
+        <div class="u-name">${escapeHtml(p.author)} <span class="badge-world">${escapeHtml(p.world)}</span></div>
+        <div class="u-meta">${escapeHtml(p.handle)} · ${escapeHtml(p.time)}</div>
       </div>
       <span class="more">⋯</span>
     </div>
-    <div class="post-text">${p.text}</div>
+    <div class="post-text">${escapeHtml(p.text)}</div>
     ${p.code ? `<div class="code-card">${p.code}</div>` : ''}
     ${p.highlight ? `<div class="highlight-card">JS</div>` : ''}
     <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span>${p.comments} commentaires · ${p.shares} partages</span></div>
     <div class="post-actions">
-      <div class="a-btn" data-like data-post-id="${p.id}"><span>🤍</span> J’aime <span class="count">${p.likes}</span></div>
-      <div class="a-btn">💬 Commenter</div>
+      <div class="a-btn" data-like data-post-id="${p.id || ''}"><span>🤍</span> J’aime <span class="count">${p.likes}</span></div>
+      <div class="a-btn" onclick="location.href='create-post.html'">💬 Commenter</div>
       <div class="a-btn">🔄 Partager</div>
     </div>
+    ${renderCommentPreview(p)}
+  </div>`;
+}
+
+/* Show up to 2 real comments under a post (Issue: comments never rendered before) */
+function renderCommentPreview(p){
+  if(!p.commentList || !p.commentList.length) return '';
+  return `
+  <div class="comment-preview" style="padding:10px 16px 4px;border-top:1px solid var(--border-soft)">
+    ${p.commentList.slice(0,2).map(c=>`
+      <div style="display:flex;gap:8px;margin-bottom:8px;font-size:13px">
+        <img class="avatar" src="${c.author?.avatar_url || 'https://i.pravatar.cc/60?u='+(c.author?.id||'x')}" style="width:26px;height:26px;flex:none">
+        <div><b>${escapeHtml(c.author ? (c.author.first_name+' '+(c.author.last_name||'')).trim() : 'Utilisateur')}</b>
+        <span style="color:var(--text-2)">${escapeHtml(c.content)}</span></div>
+      </div>`).join('')}
+    ${p.comments > 2 ? `<div class="link" style="font-size:12.5px;cursor:pointer" onclick="location.href='create-post.html'">Voir les ${p.comments} commentaires</div>` : ''}
   </div>`;
 }
 
@@ -84,8 +96,6 @@ async function render(){
   initLayout({ active:'home', mainHTML });
 }
 render();
-
-})();
 </script>
 </body>
 </html>

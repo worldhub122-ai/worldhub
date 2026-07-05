@@ -7,18 +7,17 @@
 const NAV = [
   { id:'home',          icon:'🏠', label:'Accueil',            href:'index.html' },
   { id:'reels',         icon:'🎬', label:'Reels',               href:'#' },
-  { id:'messages',      icon:'💬', label:'Messages',            href:'messages.html', badge:3 },
-  { id:'notifications', icon:'🔔', label:'Notifications',       href:'notifications.html', badge:6 },
+  { id:'messages',      icon:'💬', label:'Messages',            href:'messages.html', badge:null },
+  { id:'notifications', icon:'🔔', label:'Notifications',       href:'notifications.html', badge:null },
   { id:'create',        icon:'➕', label:'Créer une publication', href:'create-post.html' },
   { id:'dashboard',     icon:'📊', label:'Tableau de bord',     href:'dashboard.html' },
   { id:'profile',       icon:'👤', label:'Profil',              href:'profile.html' },
-  { id:'settings',      icon:'⚙️', label:'Paramètres du compte', href:'account-settings.html' },
   { id:'div1' },
   { id:'worlds-label', label:'Mes Mondes' },
-  { id:'programming',  icon:'💻', label:'Programmation',  href:'world.html', accent:'green' },
-  { id:'ai',           icon:'🤖', label:'IA & ML',         href:'world.html', accent:'blue' },
-  { id:'design',       icon:'🎨', label:'Design',          href:'world.html', accent:'pink' },
-  { id:'entrepreneur', icon:'💼', label:'Entrepreneuriat', href:'world.html', accent:'yellow' },
+  { id:'programming',  icon:'💻', label:'Programmation',  href:'world.html?id=programming', accent:'green' },
+  { id:'ai',           icon:'🤖', label:'IA & ML',         href:'world.html?id=ai', accent:'blue' },
+  { id:'design',       icon:'🎨', label:'Design',          href:'world.html?id=design', accent:'pink' },
+  { id:'entrepreneur', icon:'💼', label:'Entrepreneuriat', href:'world.html?id=entrepreneur', accent:'yellow' },
   { id:'div2' },
   { id:'jobs',        icon:'🧰', label:'Offres d\'emploi', href:'jobs.html' },
   { id:'companies',   icon:'🏢', label:'Entreprises',     href:'companies.html' },
@@ -125,6 +124,21 @@ const COLOR_VARS = { green:'var(--green)', blue:'var(--blue)', pink:'var(--pink)
 
 function tile(icon,color){ return `<div class="tile" style="background:${COLOR_VARS[color]||COLOR_VARS.accent}22;color:${COLOR_VARS[color]||COLOR_VARS.accent}">${icon}</div>`; }
 
+/* ── XSS guard: escape any user-generated text before it goes into a
+   template literal that's injected via innerHTML. Every place that
+   renders post text, comment text, bios, chat messages, etc. must
+   pass the value through this first. Do NOT escape trusted, hardcoded
+   markup (icons, static labels) — only user-authored strings. ── */
+function escapeHtml(str){
+  if(str === null || str === undefined) return '';
+  return String(str)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 /* ── Live user state (populated from Supabase when available) ── */
 const _liveUser = { avatar: MOCK.user.avatar, name: MOCK.user.name, handle: MOCK.user.handle };
 
@@ -163,8 +177,8 @@ function renderTopbar(){
     </div>
     <div class="topbar-actions">
       <button class="btn btn-primary btn-sm" onclick="location.href='create-post.html'">+ Créer</button>
-      <a href="notifications.html" class="icon-btn">🔔<span class="dot">6</span></a>
-      <a href="messages.html" class="icon-btn">💬<span class="dot">3</span></a>
+      <a href="notifications.html" class="icon-btn">🔔<span class="dot" id="dotNotif" hidden></span></a>
+      <a href="messages.html" class="icon-btn">💬<span class="dot" id="dotMsg" hidden></span></a>
       <a href="profile.html" class="avatar-btn"><img src="${_liveUser.avatar}" alt="${_liveUser.name}"></a>
       <button class="btn btn-ghost btn-sm" onclick="logout()" title="Déconnexion" style="padding:0 10px;font-size:18px;line-height:1">⏻</button>
     </div>
@@ -177,7 +191,8 @@ function renderSidebar(active){
     if(n.id.startsWith('div')) return `<div class="nav-divider"></div>`;
     if(n.id.endsWith('-label')) return `<div class="nav-label">${n.label}</div>`;
     const cls = n.id===active ? 'nav-item active' : 'nav-item';
-    const badge = n.badge ? `<span class="nav-badge">${n.badge}</span>` : '';
+    const badgeId = n.id==='messages' ? 'navBadgeMsg' : (n.id==='notifications' ? 'navBadgeNotif' : null);
+    const badge = badgeId ? `<span class="nav-badge" id="${badgeId}" hidden></span>` : '';
     return `<a class="${cls}" href="${n.href}"><span class="ic">${n.icon}</span>${n.label}${badge}</a>`;
   }).join('');
   /* Logout entry at the bottom of sidebar */
@@ -190,10 +205,10 @@ function railWorlds(){
   return `<div class="card">
     <div class="card-head"><h3>Découvrir des Mondes</h3><span class="link">Voir tout</span></div>
     ${MOCK.worlds.slice(0,4).map(w=>`
-      <div class="row">
+      <div class="row" style="cursor:pointer" onclick="location.href='world.html?id=${encodeURIComponent(w.id)}'">
         ${tile(w.icon,w.color)}
         <div><div class="row-title">${w.name}</div><div class="row-sub">${w.members} membres</div></div>
-        <button class="btn btn-outline btn-sm" style="margin-left:auto">Rejoindre</button>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="event.stopPropagation();location.href='world.html?id=${encodeURIComponent(w.id)}'">Rejoindre</button>
       </div>`).join('')}
   </div>`;
 }
@@ -257,44 +272,91 @@ function initLayout({ active, rail, mainHTML, noRail=false, wide=false }){
   wireGlobalInteractions();
   /* Hydrate topbar avatar / name from Supabase (non-blocking) */
   _hydrateCurrentUser();
+  /* Hydrate unread message/notification badges from real data.
+     If getUnreadCounts() returns null (not connected, or tables
+     don't exist yet), badges simply stay hidden rather than
+     showing a fake number. */
+  _hydrateUnreadBadges();
+}
+
+async function _hydrateUnreadBadges(){
+  if (typeof api === 'undefined') return;
+  try {
+    const counts = await api.getUnreadCounts();
+    if (!counts) return;
+    const setBadge = (id, n) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (n > 0) { el.textContent = n > 99 ? '99+' : n; el.hidden = false; }
+      else { el.hidden = true; }
+    };
+    setBadge('dotNotif', counts.notifications);
+    setBadge('dotMsg', counts.messages);
+    setBadge('navBadgeNotif', counts.notifications);
+    setBadge('navBadgeMsg', counts.messages);
+  } catch (err) {
+    console.warn('[WorldHub] Could not hydrate badges:', err.message);
+  }
 }
 
 /* ---------------- GENERIC INTERACTIONS ---------------- */
+/* Issue 6/12: likes and follows now write through `api.*` to Supabase
+   instead of only toggling a CSS class. UI updates optimistically for
+   responsiveness, then rolls back if the DB write fails (e.g. user
+   not authenticated, RLS rejection, network error). */
 function wireGlobalInteractions(){
   document.querySelectorAll('[data-like]').forEach(el=>{
+    if(!el.dataset.postId) return; // no post id wired -> nothing to persist, skip
     el.addEventListener('click', async ()=>{
-      el.classList.toggle('liked');
+      if(el.dataset.busy) return; // prevent double-click races
+      el.dataset.busy = '1';
+      const wasLiked = el.classList.contains('liked');
       const countEl = el.querySelector('.count');
+      /* optimistic update */
+      el.classList.toggle('liked');
       if(countEl){
         let n = parseInt(countEl.textContent.replace(/\D/g,''))||0;
-        n += el.classList.contains('liked') ? 1 : -1;
+        n += wasLiked ? -1 : 1;
         countEl.textContent = n;
       }
-      const postId = el.dataset.postId;
-      if (postId && typeof api !== 'undefined') {
-        try {
-          await api.toggleLike(postId);
-        } catch (err) {
-          /* Revert the optimistic UI change if the request failed
-             (e.g. user not signed in, or mock post id with no DB row) */
-          el.classList.toggle('liked');
-          if (countEl) {
-            let n = parseInt(countEl.textContent.replace(/\D/g,''))||0;
-            n += el.classList.contains('liked') ? 1 : -1;
-            countEl.textContent = n;
-          }
-          console.warn('[WorldHub] toggleLike failed:', err.message);
+      try{
+        await api.toggleLike(el.dataset.postId);
+      }catch(err){
+        /* rollback on failure */
+        el.classList.toggle('liked', wasLiked);
+        if(countEl){
+          let n = parseInt(countEl.textContent.replace(/\D/g,''))||0;
+          n += wasLiked ? 1 : -1;
+          countEl.textContent = n;
         }
+        showError ? showError(err) : console.error(err);
+      }finally{
+        delete el.dataset.busy;
       }
     });
   });
   document.querySelectorAll('[data-follow]').forEach(el=>{
-    el.addEventListener('click',()=>{
-      const following = el.dataset.follow === 'on';
-      el.dataset.follow = following ? 'off' : 'on';
-      el.textContent = following ? 'Suivre' : 'Suivi ✓';
-      el.classList.toggle('btn-primary', !following);
-      el.classList.toggle('btn-outline', following);
+    if(!el.dataset.userId) return; // no target user id wired -> skip
+    el.addEventListener('click', async ()=>{
+      if(el.dataset.busy) return;
+      el.dataset.busy = '1';
+      const wasFollowing = el.dataset.follow === 'on';
+      /* optimistic update */
+      el.dataset.follow = wasFollowing ? 'off' : 'on';
+      el.textContent = wasFollowing ? 'Suivre' : 'Suivi ✓';
+      el.classList.toggle('btn-primary', wasFollowing);
+      el.classList.toggle('btn-outline', !wasFollowing);
+      try{
+        await api.toggleFollow(el.dataset.userId);
+      }catch(err){
+        el.dataset.follow = wasFollowing ? 'on' : 'off';
+        el.textContent = wasFollowing ? 'Suivi ✓' : 'Suivre';
+        el.classList.toggle('btn-primary', !wasFollowing);
+        el.classList.toggle('btn-outline', wasFollowing);
+        showError ? showError(err) : console.error(err);
+      }finally{
+        delete el.dataset.busy;
+      }
     });
   });
 }
@@ -311,9 +373,12 @@ const api = {
     if (typeof DB !== 'undefined' && DB.isConnected) {
       try {
         const rows = await DB.listPosts({ limit: 30 });
-        /* Normalise Supabase rows to the shape the UI expects */
+        /* Normalise Supabase rows to the shape the UI expects.
+           Note: id is kept as a real DB id so like/comment/follow
+           actions can be wired to data-post-id in the markup. */
         return rows.map(p => ({
           id:       p.id,
+          authorId: p.author?.id || null,
           author:   p.author ? (p.author.first_name + ' ' + (p.author.last_name || '')).trim() : 'Utilisateur',
           handle:   p.author?.handle || '@user',
           time:     _relTime(p.created_at),
@@ -321,6 +386,7 @@ const api = {
           text:     p.content  || '',
           likes:    Array.isArray(p.likes)    ? p.likes.length    : 0,
           comments: Array.isArray(p.comments) ? p.comments.length : 0,
+          commentList: Array.isArray(p.comments) ? p.comments : [],
           shares:   0,
           avatarUrl: p.author?.avatar_url || null,
         }));
@@ -331,19 +397,100 @@ const api = {
     return MOCK.posts;
   },
 
-  /* ── Worlds ── */
-  async getWorlds() { return MOCK.worlds; },
+  /* ── Worlds ──
+     Attempts a real `worlds` table read; falls back to MOCK.worlds
+     if the table doesn't exist yet or the query fails. This mirrors
+     the same try/DB-then-fallback pattern used everywhere else. */
+  async getWorlds() {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try {
+        const rows = await DB.listWorlds();
+        if (rows && rows.length) {
+          return rows.map(w => ({
+            id: w.id, icon: w.icon || '🌍', color: w.color || 'accent',
+            name: w.name, members: w.member_count != null ? String(w.member_count) : '',
+          }));
+        }
+      } catch (err) {
+        console.warn('[WorldHub] getWorlds fell back to mock:', err.message);
+      }
+    }
+    return MOCK.worlds;
+  },
 
-  /* ── Notifications (Issue: notifications were 100% mock) ── */
+  /* ── Single world (by id/slug) ── used by world.html to know which
+     world it's rendering (name, icon, member count, description). ── */
+  async getWorld(worldId) {
+    const worlds = await this.getWorlds();
+    const found = worlds.find(w => String(w.id) === String(worldId));
+    if (found) return found;
+    return MOCK.worlds.find(w => w.id === worldId) || MOCK.worlds[0];
+  },
+
+  /* ── Posts scoped to a single world ── */
+  async getWorldPosts(worldId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try {
+        const rows = await DB.listPosts({ worldId });
+        return rows.map(p => ({
+          id:       p.id,
+          authorId: p.author?.id || null,
+          author:   p.author ? (p.author.first_name + ' ' + (p.author.last_name || '')).trim() : 'Utilisateur',
+          handle:   p.author?.handle || '@user',
+          time:     _relTime(p.created_at),
+          world:    p.world_id || '',
+          text:     p.content  || '',
+          likes:    Array.isArray(p.likes)    ? p.likes.length    : 0,
+          comments: Array.isArray(p.comments) ? p.comments.length : 0,
+          commentList: Array.isArray(p.comments) ? p.comments : [],
+          shares:   0,
+          avatarUrl: p.author?.avatar_url || null,
+        }));
+      } catch (err) {
+        console.warn('[WorldHub] getWorldPosts fell back to mock:', err.message);
+      }
+    }
+    /* Mock fallback: MOCK.posts tags posts by world *name* (e.g. 'Programmation'),
+       so resolve the display name for this world id first. */
+    const world = MOCK.worlds.find(w => w.id === worldId);
+    return MOCK.posts.filter(p => p.world === (world ? world.name : worldId));
+  },
+
+  /* ── Is the current user a member of this world? ── */
+  async isWorldMember(worldId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try { return await DB.isWorldMember(worldId); } catch (err) { console.warn('[WorldHub] isWorldMember failed:', err.message); }
+    }
+    return false;
+  },
+
+  /* ── Join/leave toggle for a world ── */
+  async toggleWorldMembership(worldId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      const isMember = await DB.isWorldMember(worldId);
+      if (isMember) { await DB.leaveWorld(worldId); return false; }
+      await DB.joinWorld(worldId);
+      return true;
+    }
+    console.log('toggleWorldMembership->mock', worldId);
+    return true;
+  },
+
+  /* ── Notifications ──
+     Attempts real `notifications` table read via DB.listNotifications();
+     falls back to MOCK.notifications otherwise. */
   async getNotifications() {
     if (typeof DB !== 'undefined' && DB.isConnected) {
       try {
-        const rows = await DB.listNotifications(30);
+        const rows = await DB.listNotifications();
         return rows.map(n => ({
           id:     n.id,
           icon:   _notifIcon(n.type),
           color:  _notifColor(n.type),
-          text:   _notifText(n),
+          /* n.content is user/DB-supplied text -> must be escaped before
+             it reaches an innerHTML template. _notifDefaultText() already
+             escapes the actor's name internally. */
+          text:   n.content ? escapeHtml(n.content) : _notifDefaultText(n),
           time:   _relTime(n.created_at),
           unread: !n.read_at,
         }));
@@ -354,37 +501,33 @@ const api = {
     return MOCK.notifications;
   },
 
-  async markNotificationRead(id) {
-    if (typeof DB !== 'undefined' && DB.isConnected) return DB.markNotificationRead(id);
-    return true;
-  },
-
   async markAllNotificationsRead() {
-    if (typeof DB !== 'undefined' && DB.isConnected) return DB.markAllNotificationsRead();
-    return true;
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try { await DB.markAllNotificationsRead(); return true; } catch (err) { console.warn(err.message); }
+    }
+    return false;
   },
 
-  /* ── Dashboard stats (Issue: dashboard numbers were hardcoded) ── */
-  async getDashboardStats() {
+  async markNotificationRead(id) {
+    if (typeof DB !== 'undefined' && DB.isConnected && id) {
+      try { await DB.markNotificationRead(id); return true; } catch (err) { console.warn(err.message); }
+    }
+    return false;
+  },
+
+  /* ── Unread badge counts (topbar nav) ── */
+  async getUnreadCounts() {
     if (typeof DB !== 'undefined' && DB.isConnected) {
       try {
-        const user = await DB.getCurrentUser();
-        if (user) return await DB.getDashboardStats(user.id);
+        const [messages, notifications] = await Promise.all([
+          DB.getUnreadMessageCount(), DB.getUnreadNotificationCount(),
+        ]);
+        return { messages, notifications };
       } catch (err) {
-        console.warn('[WorldHub] getDashboardStats fell back to mock:', err.message);
+        console.warn('[WorldHub] getUnreadCounts failed:', err.message);
       }
     }
-    return { posts: 24, followers: 12400, interactions: 3200, views: 45600 };
-  },
-
-  /* ── Avatar / cover upload ── */
-  async uploadAvatar(file) {
-    if (typeof DB !== 'undefined' && DB.isConnected) return DB.uploadAvatar(file);
-    throw new Error('Connectez Supabase pour activer le téléversement de photo.');
-  },
-  async uploadCover(file) {
-    if (typeof DB !== 'undefined' && DB.isConnected) return DB.uploadCover(file);
-    throw new Error('Connectez Supabase pour activer le téléversement de couverture.');
+    return null; // signal "unknown" so caller can decide whether to keep static badge or hide it
   },
 
   /* ── Conversations ── */
@@ -408,21 +551,39 @@ const api = {
     return MOCK.conversations;
   },
 
+  /* ── Full message thread with one other user ── */
+  async getMessages(otherId) {
+    if (typeof DB !== 'undefined' && DB.isConnected && otherId) {
+      try {
+        const rows = await DB.listMessages(otherId);
+        const me = await DB.getCurrentUser();
+        return rows.map(m => ({
+          from: m.sender_id === me.id ? 'me' : 'them',
+          text: m.content,
+          time: _relTime(m.created_at),
+        }));
+      } catch (err) {
+        console.warn('[WorldHub] getMessages fell back to mock:', err.message);
+      }
+    }
+    return MOCK.chatThread;
+  },
+
   /* ── Send message ── */
   async sendMessage(recipientId, content) {
-    if (typeof DB !== 'undefined' && DB.isConnected) {
+    if (typeof DB !== 'undefined' && DB.isConnected && recipientId) {
       return DB.sendMessage(recipientId, content);
     }
     console.log('sendMessage->mock', recipientId, content);
     return true;
   },
 
-  /* ── Create post (Issue 3) ── */
-  async createPost(content, worldId) {
+  /* ── Create post (Issue 3, 5: text + image uploads) ── */
+  async createPost(content, worldId, imageUrl) {
     if (typeof DB !== 'undefined' && DB.isConnected) {
-      return DB.createPost({ content, worldId });
+      return DB.createPost({ content, worldId, imageUrl: imageUrl || null });
     }
-    console.log('createPost->mock', content);
+    console.log('createPost->mock', content, imageUrl);
     return true;
   },
 
@@ -459,7 +620,6 @@ const api = {
             name:      (profile.first_name + ' ' + (profile.last_name || '')).trim(),
             handle:    profile.handle     || '@user',
             avatar:    profile.avatar_url || MOCK.user.avatar,
-            cover:     profile.cover_url  || null,
             bio:       profile.bio        || MOCK.user.bio,
             followers: counts.followers,
             following: counts.following,
@@ -472,26 +632,144 @@ const api = {
     }
     return { ...MOCK.user, id: null };
   },
+
+  /* ── Companies ── */
+  async getCompanies() {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try {
+        const rows = await DB.listCompanies();
+        const user = await DB.getCurrentUser();
+        let followingIds = new Set();
+        if (user) {
+          const { data } = await DB.sbClient.from('company_followers').select('company_id').eq('user_id', user.id);
+          followingIds = new Set((data||[]).map(r=>r.company_id));
+        }
+        return rows.map(c => ({
+          id: c.id, name: c.name, sector: c.sector || '',
+          followers: String(c.company_followers?.[0]?.count ?? 0),
+          openJobs: c.jobs?.[0]?.count ?? 0,
+          isFollowing: followingIds.has(c.id),
+        }));
+      } catch (err) { console.warn('[WorldHub] getCompanies fell back to mock:', err.message); }
+    }
+    return MOCK.companies;
+  },
+  async followCompany(companyId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.toggleFollowCompany(companyId);
+    console.log('followCompany->mock', companyId);
+    return true;
+  },
+
+  /* ── Jobs ── */
+  async getJobs() {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try {
+        const rows = await DB.listJobs();
+        return rows.map(j => ({
+          id: j.id, title: j.title, company: j.company?.name || '',
+          place: j.is_remote ? 'Remote' : (j.location || ''), type: j.job_type,
+          tag: j.world_id || '', posted: _relTime(j.created_at),
+        }));
+      } catch (err) { console.warn('[WorldHub] getJobs fell back to mock:', err.message); }
+    }
+    return MOCK.jobs;
+  },
+  async applyToJob(jobId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.applyToJob(jobId);
+    console.log('applyToJob->mock', jobId);
+    return true;
+  },
+
+  /* ── Events ── */
+  async getEvents() {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try {
+        const rows = await DB.listEvents();
+        return rows.map(e => {
+          const d = new Date(e.starts_at);
+          return {
+            id: e.id, day: String(d.getDate()).padStart(2,'0'),
+            mon: d.toLocaleDateString('fr-FR', { month:'short' }).toUpperCase(),
+            title: e.title, place: e.is_online ? 'En ligne' : (e.location || ''),
+            desc: e.description || '',
+            going: `${(e.event_attendees||[]).filter(a=>a.status==='going').length} participants`,
+          };
+        });
+      } catch (err) { console.warn('[WorldHub] getEvents fell back to mock:', err.message); }
+    }
+    return MOCK.events;
+  },
+  async rsvpEvent(eventId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.rsvpEvent(eventId, 'going');
+    console.log('rsvpEvent->mock', eventId);
+    return true;
+  },
+
+  /* ── Marketplace ── */
+  async getListings() {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try {
+        const rows = await DB.listListings();
+        return rows.map(l => {
+          const ratings = (l.listing_reviews||[]).map(r=>r.rating);
+          const avg = ratings.length ? (ratings.reduce((a,b)=>a+b,0)/ratings.length).toFixed(1) : '—';
+          return {
+            id: l.id, title: l.title,
+            seller: l.seller ? (l.seller.first_name+' '+(l.seller.last_name||'')).trim() : 'Vendeur',
+            price: (l.price_cents/100).toLocaleString('fr-FR', { style:'currency', currency:l.currency||'EUR' }),
+            rating: avg, tag: l.category || '',
+          };
+        });
+      } catch (err) { console.warn('[WorldHub] getListings fell back to mock:', err.message); }
+    }
+    return MOCK.listings;
+  },
+  async orderListing(listingId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.orderListing(listingId);
+    console.log('orderListing->mock', listingId);
+    return true;
+  },
+
+  /* ── Worlds ── */
+  async joinWorld(worldId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.joinWorld(worldId);
+    console.log('joinWorld->mock', worldId);
+    return true;
+  },
+
+  /* ── Dashboard ── */
+  async getDashboardStats() {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try {
+        const [summary, daily] = await Promise.all([DB.getDashboardSummary(), DB.getDailyInteractions(14)]);
+        return {
+          posts: summary?.post_count ?? 0,
+          followers: summary?.follower_count ?? 0,
+          interactions: summary?.interaction_count ?? 0,
+          views: summary?.view_count ?? 0,
+          daily: (daily || []).map(d => d.interactions),
+        };
+      } catch (err) { console.warn('[WorldHub] getDashboardStats fell back to mock:', err.message); }
+    }
+    return null; // caller keeps the static mock numbers already in dashboard.html
+  },
 };
 
-/* ── Notification type → icon/color/text helpers ── */
+/* ── Notification display helpers (map DB `type` -> icon/color/text) ── */
 function _notifIcon(type){
-  return { like:'❤️', comment:'💬', follow:'➕', mention:'📣', share:'🔄', system:'🔔' }[type] || '🔔';
+  return { like:'❤️', comment:'💬', follow:'➕', mention:'📣', share:'🔄', system:'🌍' }[type] || '🔔';
 }
 function _notifColor(type){
   return { like:'pink', comment:'blue', follow:'accent', mention:'accent', share:'green', system:'yellow' }[type] || 'accent';
 }
-function _notifText(n){
-  const actorName = n.actor ? (n.actor.first_name + ' ' + (n.actor.last_name||'')).trim() : 'Quelqu\'un';
-  if (n.content) return n.content;
-  switch(n.type){
-    case 'like':    return `${actorName} a aimé votre publication`;
-    case 'comment': return `${actorName} a commenté votre publication`;
-    case 'follow':  return `${actorName} a commencé à vous suivre`;
-    case 'mention': return `${actorName} vous a mentionné`;
-    case 'share':   return `${actorName} a partagé votre publication`;
-    default:        return 'Nouvelle notification';
-  }
+function _notifDefaultText(n){
+  const who = n.actor ? (n.actor.first_name + ' ' + (n.actor.last_name || '')).trim() : 'Quelqu\'un';
+  const map = {
+    like:'a aimé votre publication', comment:'a commenté votre publication',
+    follow:'a commencé à vous suivre', mention:'vous a mentionné dans un commentaire',
+    share:'a partagé votre publication',
+  };
+  return `${escapeHtml(who)} ${map[n.type] || 'a interagi avec votre contenu'}`;
 }
 
 /* ── Relative time helper ── */

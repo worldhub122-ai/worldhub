@@ -19,60 +19,99 @@
   const _session = await requireAuth();
   if (!_session) return;
 
-function statCard(icon,color,val,lbl,delta){
+/* Fallback numbers used only when Supabase isn't connected or the
+   dashboard RPCs aren't available yet — keeps the page looking good
+   in mock mode instead of showing zeros. */
+const FALLBACK_STATS = {
+  posts: 24, followers: 12400, interactions: 3200, views: 45600,
+  daily: [40,65,35,80,55,90,60,75,50,85,45,70,95,60],
+};
+
+function fmtNum(n){
+  if (typeof n !== 'number') return n;
+  return n >= 1000 ? (n/1000).toFixed(1).replace(/\.0$/,'')+'k' : String(n);
+}
+
+function statCard(icon,color,val,lbl){
   return `
   <div class="card stat-card">
     <div class="ic" style="background:${COLOR_VARS[color]}">${icon}</div>
     <div class="val">${val}</div>
     <div class="lbl">${lbl}</div>
-    <div class="delta">${delta}</div>
   </div>`;
 }
-function bars(){
-  const vals=[40,65,35,80,55,90,60,75,50,85,45,70,95,60];
-  return vals.map(v=>`<div class="bar" style="height:${v}%"></div>`).join('');
+function bars(daily){
+  const max = Math.max(...daily, 1);
+  return daily.map(v=>`<div class="bar" style="height:${Math.max(4, Math.round((v/max)*100))}%"></div>`).join('');
 }
 
-function fmtCompact(n){
-  if (n === null || n === undefined) return '—';
-  if (n >= 1000) return (n/1000).toFixed(1).replace('.0','') + 'k';
-  return String(n);
+/* Recent activity: reuse the notifications feed (it already carries
+   icons, colors, and relative timestamps in the same shape). */
+function activityRow(n){
+  return `<div class="row"><span style="font-size:18px">${n.icon}</span><div><div class="row-title">${n.text}</div><div class="row-sub">${escapeHtml(n.time)}</div></div></div>`;
 }
 
-function mainDash(stats){
+function mainDash(stats, activity, dateRangeLabel){
+  const isLive = !!stats.isLive;
   return `
   <div class="main-col">
     <div class="card card-pad" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
       <div style="font-size:19px;font-weight:800">Tableau de bord</div>
       <div style="display:flex;gap:10px;align-items:center">
-        <span class="pill pill-muted">1–30 juin 2024</span>
-        <button class="icon-btn" onclick="location.reload()">⟳</button>
+        <span class="pill pill-muted">${dateRangeLabel}</span>
+        <button class="icon-btn" onclick="reloadDashboard()">⟳</button>
       </div>
     </div>
     <div class="stat-grid">
-      ${statCard('📝','accent',fmtCompact(stats.posts),'Publications','')}
-      ${statCard('👥','blue',fmtCompact(stats.followers),'Abonnés','')}
-      ${statCard('💬','pink',fmtCompact(stats.interactions),'Interactions','')}
-      ${statCard('👁️','green',fmtCompact(stats.views),'Vues', stats.views===null ? '(bientôt)' : '')}
+      ${statCard('📝','accent',fmtNum(stats.posts),'Publications')}
+      ${statCard('👥','blue',fmtNum(stats.followers),'Abonnés')}
+      ${statCard('💬','pink',fmtNum(stats.interactions),'Interactions')}
+      ${statCard('👁️','green',fmtNum(stats.views),'Vues')}
     </div>
     <div class="card">
-      <div class="card-head"><h3>Graphique des interactions</h3><span class="link">1 juin – 30 juin</span></div>
-      <div class="mini-chart">${bars()}</div>
+      <div class="card-head"><h3>Graphique des interactions</h3><span class="link">${dateRangeLabel}</span></div>
+      <div class="mini-chart">${bars(stats.daily)}</div>
       <div style="display:flex;justify-content:space-between;padding:0 14px 14px;font-size:11px;color:var(--text-3)">
-        <span>1 juin</span><span>10 juin</span><span>15 juin</span><span>20 juin</span><span>25 juin</span><span>30 juin</span>
+        ${stats.dayLabels.map(l=>`<span>${l}</span>`).join('')}
       </div>
+      ${!isLive ? `<div style="padding:0 14px 14px;font-size:11.5px;color:var(--text-3)">Données d’exemple — connectez Supabase pour voir vos vraies statistiques.</div>` : ''}
     </div>
     <div class="card">
       <div class="card-head"><h3>Activité récente</h3></div>
-      <div class="row"><span style="font-size:18px">➕</span><div><div class="row-title">Nouvel abonné</div><div class="row-sub">Sarah Parker · il y a 2 min</div></div></div>
-      <div class="row"><span style="font-size:18px">💬</span><div><div class="row-title">Nouveau commentaire sur votre publication</div><div class="row-sub">il y a 15 min</div></div></div>
-      <div class="row"><span style="font-size:18px">➕</span><div><div class="row-title">Nouvel abonné</div><div class="row-sub">John Smith · il y a 1h</div></div></div>
-      <div class="row"><span style="font-size:18px">❤️</span><div><div class="row-title">Votre publication a été aimée</div><div class="row-sub">il y a 2h</div></div></div>
+      ${activity.length ? activity.map(activityRow).join('') : `<div class="row" style="padding:18px;justify-content:center;color:var(--text-3)">Aucune activité récente.</div>`}
     </div>
   </div>`;
 }
-const _stats = await api.getDashboardStats();
-initLayout({ active:'dashboard', mainHTML: mainDash(_stats), noRail:true, wide:true });
+
+/* Build 6 evenly-spaced date labels covering the same window as
+   stats.daily (defaults to the last N days ending today). */
+function buildDayLabels(n){
+  const labels = [];
+  const step = Math.max(1, Math.floor(n / 5));
+  for (let i = n - 1; i >= 0; i -= step) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    labels.push(d.toLocaleDateString('fr-FR', { day:'numeric', month:'short' }));
+  }
+  return labels;
+}
+
+async function loadAndRender(){
+  const [liveStats, activity] = await Promise.all([
+    api.getDashboardStats(),
+    api.getNotifications(),
+  ]);
+  const stats = liveStats
+    ? { ...liveStats, isLive: true }
+    : { ...FALLBACK_STATS, isLive: false };
+  if (!stats.daily || !stats.daily.length) stats.daily = FALLBACK_STATS.daily;
+  stats.dayLabels = buildDayLabels(stats.daily.length);
+  const rangeLabel = stats.isLive ? `${stats.daily.length} derniers jours` : '1–30 juin 2024';
+  initLayout({ active:'dashboard', mainHTML: mainDash(stats, activity.slice(0,4), rangeLabel), noRail:true, wide:true });
+}
+
+window.reloadDashboard = loadAndRender;
+await loadAndRender();
 
 })();
 </script>

@@ -21,30 +21,30 @@
 
 function notifRow(n){
   return `
-  <div class="notif-row ${n.unread?'unread':''}" ${n.id?`data-notif-id="${n.id}" onclick="handleNotifClick('${n.id}', this)" style="cursor:pointer"`:''}>
+  <div class="notif-row ${n.unread?'unread':''}" data-notif-id="${n.id ?? ''}" onclick="handleNotifClick('${n.id ?? ''}')" style="cursor:pointer">
     <div class="notif-ic" style="background:${COLOR_VARS[n.color]}">${n.icon}</div>
     <div style="flex:1">
       <div style="font-size:14px">${n.text}</div>
-      <div style="font-size:12px;color:var(--text-3);margin-top:3px">${n.time}</div>
+      <div style="font-size:12px;color:var(--text-3);margin-top:3px">${escapeHtml(n.time)}</div>
     </div>
     ${n.unread ? `<span style="width:8px;height:8px;border-radius:50%;background:var(--accent);margin-top:5px"></span>` : ''}
   </div>`;
 }
 
-async function handleNotifClick(id, el){
-  el.classList.remove('unread');
-  const dot = el.querySelector('span[style*="border-radius:50%"]');
-  if (dot) dot.remove();
-  try { await api.markNotificationRead(id); } catch(err){ showError(err); }
+/* Mark a single notification read on click (Issue 9) */
+async function handleNotifClick(id){
+  if (!id) return;
+  const row = document.querySelector(`[data-notif-id="${id}"]`);
+  if (row) { row.classList.remove('unread'); row.querySelector('span[style*="border-radius:50%"]')?.remove(); }
+  try { await api.markNotificationRead(id); } catch (err) { console.warn(err); }
 }
 
 async function handleMarkAllRead(){
-  document.querySelectorAll('.notif-row.unread').forEach(el=>{
-    el.classList.remove('unread');
-    const dot = el.querySelector('span[style*="border-radius:50%"]');
-    if (dot) dot.remove();
+  document.querySelectorAll('.notif-row.unread').forEach(row=>{
+    row.classList.remove('unread');
+    row.querySelector('span[style*="border-radius:50%"]')?.remove();
   });
-  try { await api.markAllNotificationsRead(); } catch(err){ showError(err); }
+  try { await api.markAllNotificationsRead(); } catch (err) { console.warn(err); }
 }
 
 function filterRail(){
@@ -63,14 +63,17 @@ function mainNotif(items){
   return `
   <div class="main-col">
     <div class="card">
-      <div class="card-head"><h3>Notifications</h3><span class="link" style="margin-right:14px" onclick="handleMarkAllRead()">Tout marquer comme lu</span><span class="link" onclick="location.href='account-settings.html'">⚙️ Paramètres</span></div>
-      ${items.length ? items.map(notifRow).join('') : `<div style="padding:40px;text-align:center;color:var(--text-3)">Aucune notification pour le moment.</div>`}
+      <div class="card-head"><h3>Notifications</h3><span class="link" style="margin-right:14px" onclick="handleMarkAllRead()">Tout marquer comme lu</span><span class="link">⚙️ Paramètres</span></div>
+      ${items.length ? items.map(notifRow).join('') : `<div class="row" style="padding:24px;justify-content:center;color:var(--text-3)">Aucune notification pour le moment.</div>`}
     </div>
   </div>`;
 }
 
-const items = await api.getNotifications();
-initLayout({ active:'notifications', mainHTML: mainNotif(items), rail: filterRail() });
+async function render(){
+  const items = await api.getNotifications();
+  initLayout({ active:'notifications', mainHTML: mainNotif(items), rail: filterRail() });
+}
+render();
 
 })();
 </script>

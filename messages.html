@@ -19,34 +19,40 @@
   const _session = await requireAuth();
   if (!_session) return;
 
+/* State: real conversations + which one is open. Falls back to MOCK
+   shape automatically since api.getConversations() already normalises
+   both real and mock data to the same fields (name, avatar, preview,
+   time, unread, otherId). */
+let _conversations = [];
+let _activeOtherId = null;
+
 function chatList(){
-  return MOCK.conversations.map((c,i)=>`
-    <div class="chat-item ${i===0?'active':''}">
+  return _conversations.map((c,i)=>`
+    <div class="chat-item ${c.otherId===_activeOtherId ? 'active':''}" data-other-id="${c.otherId ?? ''}" onclick="openConversation('${c.otherId ?? ''}')">
       <div style="position:relative;flex:none">
         <img class="avatar" src="${c.avatar}" style="width:42px;height:42px">
         ${c.online?'<span class="online-dot" style="position:absolute;bottom:0;right:0"></span>':''}
       </div>
       <div style="flex:1;min-width:0">
-        <div class="name-row"><span>${c.name}</span><span style="color:var(--text-3);font-weight:400">${c.time}</span></div>
-        <div class="preview">${c.preview}</div>
+        <div class="name-row"><span>${escapeHtml(c.name)}</span><span style="color:var(--text-3);font-weight:400">${escapeHtml(c.time)}</span></div>
+        <div class="preview">${escapeHtml(c.preview)}</div>
       </div>
       ${c.unread ? `<span class="nav-badge" style="background:var(--accent);color:#fff">${c.unread}</span>`:''}
     </div>`).join('');
 }
-function chatBubbles(){
-  return MOCK.chatThread.map(m=>`
+function chatBubbles(thread){
+  return thread.map(m=>`
     <div style="display:flex;flex-direction:column;align-items:${m.from==='me'?'flex-end':'flex-start'}">
-      <div class="bubble ${m.from==='me'?'out':'in'}">${m.text}</div>
-      <span class="bubble-time">${m.time}</span>
+      <div class="bubble ${m.from==='me'?'out':'in'}">${escapeHtml(m.text)}</div>
+      <span class="bubble-time">${escapeHtml(m.time)}</span>
     </div>`).join('');
 }
 
-function mainMessages(){
-  const active = MOCK.conversations[0];
+function shellHTML(active, thread){
   return `
   <div class="main-col" style="max-width:none">
     <div class="chat-shell">
-      <div class="chat-list">
+      <div class="chat-list" id="chatListPane">
         <div style="padding:14px 16px;border-bottom:1px solid var(--border-soft)">
           <div class="search-box" style="max-width:none"><span>🔍</span><input placeholder="Rechercher des messages..."></div>
         </div>
@@ -55,22 +61,22 @@ function mainMessages(){
       <div class="chat-main">
         <div class="chat-head">
           <div style="position:relative"><img class="avatar" src="${active.avatar}" style="width:38px;height:38px"><span class="online-dot" style="position:absolute;bottom:0;right:0"></span></div>
-          <div><div style="font-weight:700;font-size:14.5px">${active.name}</div><div style="font-size:12px;color:var(--green)">En ligne</div></div>
+          <div><div style="font-weight:700;font-size:14.5px">${escapeHtml(active.name)}</div><div style="font-size:12px;color:var(--green)">En ligne</div></div>
           <div style="margin-left:auto;display:flex;gap:8px">
             <span class="icon-btn">📞</span><span class="icon-btn">🎥</span><span class="icon-btn">ℹ️</span>
           </div>
         </div>
-        <div class="chat-body">${chatBubbles()}</div>
+        <div class="chat-body" id="chatBody">${chatBubbles(thread)}</div>
         <div class="chat-input-bar">
           <span class="icon-btn">📎</span>
-          <input placeholder="Écrivez votre message...">
-          <button class="btn btn-primary btn-sm">Envoyer</button>
+          <input id="msgInput" placeholder="Écrivez votre message..." onkeydown="if(event.key==='Enter') sendCurrentMessage()">
+          <button class="btn btn-primary btn-sm" onclick="sendCurrentMessage()">Envoyer</button>
         </div>
       </div>
       <div class="chat-info">
         <div style="text-align:center">
           <img class="avatar" src="${active.avatar}" style="width:76px;height:76px;margin:0 auto 10px">
-          <div style="font-weight:700">${active.name}</div>
+          <div style="font-weight:700">${escapeHtml(active.name)}</div>
           <div style="font-size:12px;color:var(--green)">En ligne</div>
         </div>
         <div class="nav-label" style="padding-left:0">Options</div>
@@ -82,7 +88,38 @@ function mainMessages(){
     </div>
   </div>`;
 }
-initLayout({ active:'messages', mainHTML: mainMessages(), noRail:true, wide:true });
+
+/* Switch the open thread and re-render (Issue 8: conversations use real users) */
+async function openConversation(otherId){
+  _activeOtherId = otherId || null;
+  const active = _conversations.find(c => String(c.otherId) === String(otherId)) || _conversations[0];
+  if (!active) return;
+  const thread = await api.getMessages(active.otherId);
+  initLayout({ active:'messages', mainHTML: shellHTML(active, thread), noRail:true, wide:true });
+}
+
+async function sendCurrentMessage(){
+  const input = document.getElementById('msgInput');
+  const text = input?.value.trim();
+  if (!text || !_activeOtherId) return;
+  input.value = '';
+  const body = document.getElementById('chatBody');
+  if (body) body.insertAdjacentHTML('beforeend', chatBubbles([{ from:'me', text, time:'à l\'instant' }]));
+  try {
+    await api.sendMessage(_activeOtherId, text);
+  } catch (err) {
+    showError ? showError(err) : console.error(err);
+  }
+}
+
+async function render(){
+  _conversations = await api.getConversations();
+  const active = _conversations[0] || { name:'', avatar:'', otherId:null };
+  _activeOtherId = active.otherId ?? null;
+  const thread = await api.getMessages(active.otherId);
+  initLayout({ active:'messages', mainHTML: shellHTML(active, thread), noRail:true, wide:true });
+}
+render();
 
 })();
 </script>

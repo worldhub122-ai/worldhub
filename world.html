@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WorldHub — Programmation</title>
+<title>WorldHub — Monde</title>
 <link rel="stylesheet" href="assets/css/main.css">
 </head>
 <body>
@@ -15,17 +15,20 @@
 <script src="assets/js/auth-guard.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
-(async function() {
-  const _session = await requireAuth();
-  if (!_session) return;
+/* Which world are we viewing? Comes from ?id=programming (etc.) in the
+   URL — falls back to 'programming' if the page was opened without one. */
+const WORLD_ID = new URLSearchParams(location.search).get('id') || 'programming';
 
-function worldRail(){
+let _world = null;
+let _isMember = false;
+
+function worldRail(world){
   return `
   <div class="card card-pad">
     <h3 style="margin:0 0 12px;font-size:15px">À propos</h3>
-    <p style="font-size:13.5px;color:var(--text-2);line-height:1.6">Un espace pour les développeurs de tous niveaux. Partagez du code, posez des questions et progressez ensemble.</p>
-    <div class="row" style="padding:8px 0"><span>📁</span>&nbsp; Catégorie: Programmation</div>
-    <div class="row" style="padding:8px 0"><span>📅</span>&nbsp; Créé le 15 janv. 2024</div>
+    <p style="font-size:13.5px;color:var(--text-2);line-height:1.6">${escapeHtml(world.description || 'Un espace pour échanger, partager et progresser ensemble dans cette communauté.')}</p>
+    <div class="row" style="padding:8px 0"><span>📁</span>&nbsp; Catégorie: ${escapeHtml(world.name)}</div>
+    <div class="row" style="padding:8px 0"><span>👥</span>&nbsp; ${escapeHtml(String(world.members || 0))} membres</div>
     <div class="row" style="padding:8px 0"><span>🌐</span>&nbsp; Français</div>
   </div>
   <div class="card">
@@ -37,20 +40,62 @@ function worldRail(){
   <div class="card">
     <div class="card-head"><h3>Admins</h3></div>
     ${MOCK.topMembers.slice(0,2).map(m=>`
-      <div class="row"><img class="avatar" src="${m.avatar}" style="width:34px;height:34px"><div><div class="row-title">${m.name}</div><div class="row-sub">${m.meta.includes('@')?m.meta:'@'+m.name.toLowerCase().replace(' ','.')}</div></div></div>`).join('')}
+      <div class="row"><img class="avatar" src="${m.avatar}" style="width:34px;height:34px"><div><div class="row-title">${escapeHtml(m.name)}</div><div class="row-sub">${m.meta.includes('@')?escapeHtml(m.meta):'@'+m.name.toLowerCase().replace(' ','.')}</div></div></div>`).join('')}
   </div>`;
 }
 
-function mainWorld(){
+function worldPostCard(p){
+  return `
+  <div class="post">
+    <div class="post-head">
+      <img class="avatar" src="${p.avatarUrl || ('https://i.pravatar.cc/80?u='+encodeURIComponent(p.handle||p.author))}" style="width:40px;height:40px">
+      <div><div class="u-name">${escapeHtml(p.author)}</div><div class="u-meta">${escapeHtml(p.time)}</div></div>
+      <span class="more">⋯</span>
+    </div>
+    <div class="post-text">${escapeHtml(p.text)}</div>
+    ${p.code?`<div class="code-card">${p.code}</div>`:''}
+    <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span>${p.comments} commentaires</span></div>
+    <div class="post-actions">
+      <div class="a-btn" data-like data-post-id="${p.id || ''}"><span>🤍</span> J’aime <span class="count">${p.likes}</span></div>
+      <div class="a-btn" onclick="location.href='create-post.html'">💬 Commenter</div>
+      <div class="a-btn">🔄 Partager</div>
+    </div>
+  </div>`;
+}
+
+/* Join/leave this world: requires login, toggles button state,
+   reverts if the write fails (same optimistic-but-honest pattern
+   used for follow/RSVP/order buttons elsewhere). */
+async function handleJoinWorld(btn){
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    const session = await DB.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+  }
+  const wasMember = _isMember;
+  btn.disabled = true;
+  try {
+    _isMember = await api.toggleWorldMembership(WORLD_ID);
+    btn.textContent = _isMember ? 'Rejoint ✓' : 'Rejoindre';
+    btn.classList.toggle('btn-outline', _isMember);
+    btn.classList.toggle('btn-primary', !_isMember);
+  } catch (err) {
+    _isMember = wasMember;
+    showError(err);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function mainWorld(world, posts){
   return `
   <div class="main-col">
     <div class="world-cover">
-      <div class="glyph-lg">💻</div>
+      <div class="glyph-lg">${world.icon || '🌍'}</div>
       <div>
-        <div style="font-size:24px;font-weight:800">Programmation</div>
-        <div style="color:var(--text-2);font-size:13.5px;margin:4px 0 14px">12.3k Membres · 🌍 Public</div>
-        <p style="color:var(--text-2);font-size:13.5px;max-width:520px;margin:0 0 14px">Partagez vos connaissances, posez vos questions et progressez ensemble dans l’univers du code.</p>
-        <button class="btn btn-primary">Rejoindre</button>
+        <div style="font-size:24px;font-weight:800">${escapeHtml(world.name)}</div>
+        <div style="color:var(--text-2);font-size:13.5px;margin:4px 0 14px">${escapeHtml(String(world.members || 0))} Membres · 🌍 Public</div>
+        <p style="color:var(--text-2);font-size:13.5px;max-width:520px;margin:0 0 14px">${escapeHtml(world.description || 'Partagez vos connaissances, posez vos questions et progressez ensemble.')}</p>
+        <button class="btn ${_isMember?'btn-outline':'btn-primary'}" onclick="handleJoinWorld(this)">${_isMember?'Rejoint ✓':'Rejoindre'}</button>
       </div>
     </div>
     <div class="card">
@@ -63,30 +108,29 @@ function mainWorld(){
       <div class="composer">
         <div class="composer-top">
           <img class="avatar" src="${MOCK.user.avatar}" style="width:38px;height:38px">
-          <div class="fake-input">Quoi de neuf dans Programmation ?</div>
+          <div class="fake-input" onclick="location.href='create-post.html'">Quoi de neuf dans ${escapeHtml(world.name)} ?</div>
         </div>
         <div class="composer-actions">
-          <div class="chip blue">🖼️ Image</div><div class="chip">🎬 Vidéo</div><div class="chip green">📊 Sondage</div>
-          <div class="spacer"></div><button class="btn btn-primary btn-sm">Publier</button>
+          <div class="chip blue" onclick="location.href='create-post.html'">🖼️ Image</div><div class="chip" onclick="location.href='create-post.html'">🎬 Vidéo</div><div class="chip green" onclick="location.href='create-post.html'">📊 Sondage</div>
+          <div class="spacer"></div><button class="btn btn-primary btn-sm" onclick="location.href='create-post.html'">Publier</button>
         </div>
       </div>
-      ${MOCK.posts.filter(p=>p.world==='Programmation').map(p=>`
-        <div class="post">
-          <div class="post-head">
-            <img class="avatar" src="https://i.pravatar.cc/80?u=${p.handle}" style="width:40px;height:40px">
-            <div><div class="u-name">${p.author}</div><div class="u-meta">${p.time}</div></div>
-            <span class="more">⋯</span>
-          </div>
-          <div class="post-text">${p.text}</div>
-          ${p.code?`<div class="code-card">${p.code}</div>`:''}
-          <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span>${p.comments} commentaires</span></div>
-        </div>`).join('')}
+      ${posts.length ? posts.map(worldPostCard).join('') : `<div class="card-pad" style="text-align:center;color:var(--text-3)">Aucune publication pour le moment dans ce monde.</div>`}
     </div>
   </div>`;
 }
-initLayout({ active:'programming', mainHTML: mainWorld(), rail: worldRail() });
 
-})();
+async function render(){
+  const [world, posts, isMember] = await Promise.all([
+    api.getWorld(WORLD_ID),
+    api.getWorldPosts(WORLD_ID),
+    api.isWorldMember(WORLD_ID),
+  ]);
+  _world = world;
+  _isMember = isMember;
+  initLayout({ active: WORLD_ID, mainHTML: mainWorld(world, posts), rail: worldRail(world) });
+}
+render();
 </script>
 </body>
 </html>

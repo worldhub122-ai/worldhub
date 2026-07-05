@@ -23,7 +23,7 @@ function profileRail(){
   return `
   <div class="card card-pad">
     <h3 style="margin:0 0 12px;font-size:15px">À propos</h3>
-    <p style="font-size:13.5px;color:var(--text-2);line-height:1.6;margin:0 0 14px">Développeur Full Stack basé à Paris. Passionné par l’IA, l’open source et la création de produits qui aident les autres à apprendre.</p>
+    <p style="font-size:13.5px;color:var(--text-2);line-height:1.6;margin:0 0 14px">${escapeHtml(MOCK.user.bio)}</p>
     <h3 style="margin:16px 0 10px;font-size:15px">Compétences</h3>
     <div style="display:flex;flex-wrap:wrap;gap:8px">
       ${['JavaScript','TypeScript','React','Node.js','Python'].map(s=>`<span class="pill pill-muted">${s}</span>`).join('')}
@@ -45,26 +45,19 @@ function mainProfile(){
   return `
   <div class="main-col">
     <div class="card profile-card">
-      <div class="profile-cover" id="profileCover" style="${MOCK.user.cover ? `background-image:url('${MOCK.user.cover}');background-size:cover;background-position:center` : ''};position:relative;cursor:pointer" onclick="document.getElementById('coverInput').click()" title="Changer la photo de couverture">
-        <input type="file" id="coverInput" accept="image/*" hidden onchange="handleCoverChange(this)">
-        <span style="position:absolute;bottom:10px;right:14px;background:rgba(0,0,0,.45);color:#fff;font-size:12px;padding:5px 10px;border-radius:6px">🖼️ Changer la couverture</span>
-      </div>
+      <div class="profile-cover"></div>
       <div class="profile-head">
         <div style="display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:12px">
           <div style="display:flex;align-items:flex-end;gap:14px">
-            <div style="position:relative;cursor:pointer" onclick="document.getElementById('avatarInput').click()" title="Changer la photo de profil">
-              <img class="profile-avatar" id="profileAvatarImg" src="${MOCK.user.avatar}">
-              <input type="file" id="avatarInput" accept="image/*" hidden onchange="handleAvatarChange(this)">
-              <span style="position:absolute;bottom:2px;right:2px;background:var(--accent);color:#fff;font-size:12px;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center">📷</span>
-            </div>
+            <img class="profile-avatar" src="${MOCK.user.avatar}">
             <div>
               <div style="font-size:20px;font-weight:800;display:flex;align-items:center;gap:6px">${MOCK.user.name} <span class="pill pill-accent">✓ Vérifié</span></div>
               <div style="color:var(--text-3);font-size:13.5px">${MOCK.user.handle} · Développeur Full Stack</div>
             </div>
           </div>
-          <button class="btn btn-primary" onclick="location.href='account-settings.html'">Modifier le profil</button>
+          <button class="btn btn-primary">Modifier le profil</button>
         </div>
-        <p style="color:var(--text-2);font-size:14px;margin:16px 0">${MOCK.user.bio} · 📍 Paris, France · 🔗 alexdev.io · Rejoint en janvier 2024</p>
+        <p style="color:var(--text-2);font-size:14px;margin:16px 0">${escapeHtml(MOCK.user.bio)} · 📍 Paris, France · 🔗 alexdev.io · Rejoint en janvier 2024</p>
         <div style="display:flex;gap:26px;font-size:13.5px">
           <div><b>${MOCK.user.posts}</b> <span style="color:var(--text-3)">Publications</span></div>
           <div><b>${MOCK.user.followers}</b> <span style="color:var(--text-3)">Abonnés</span></div>
@@ -81,40 +74,14 @@ function mainProfile(){
         <div class="post">
           <div class="post-head">
             <img class="avatar" src="${MOCK.user.avatar}" style="width:40px;height:40px">
-            <div><div class="u-name">${MOCK.user.name} <span class="badge-world">${p.world}</span></div><div class="u-meta">${p.time}</div></div>
+            <div><div class="u-name">${escapeHtml(MOCK.user.name)} <span class="badge-world">${escapeHtml(p.world)}</span></div><div class="u-meta">${escapeHtml(p.time)}</div></div>
             <span class="more">⋯</span>
           </div>
-          <div class="post-text">${p.text}</div>
+          <div class="post-text">${escapeHtml(p.text)}</div>
           <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span>${p.comments} commentaires</span></div>
         </div>`).join('')}
     </div>
   </div>`;
-}
-
-async function handleAvatarChange(input){
-  const file = input.files && input.files[0];
-  if (!file) return;
-  try {
-    const url = await api.uploadAvatar(file);
-    document.getElementById('profileAvatarImg').src = url;
-    const topbarImg = document.querySelector('.avatar-btn img');
-    if (topbarImg) topbarImg.src = url;
-  } catch (err) {
-    showError(err);
-  }
-}
-
-async function handleCoverChange(input){
-  const file = input.files && input.files[0];
-  if (!file) return;
-  try {
-    const url = await api.uploadCover(file);
-    document.getElementById('profileCover').style.backgroundImage = `url('${url}')`;
-    document.getElementById('profileCover').style.backgroundSize = 'cover';
-    document.getElementById('profileCover').style.backgroundPosition = 'center';
-  } catch (err) {
-    showError(err);
-  }
 }
 
 // Issue 5: load real profile from Supabase
@@ -125,7 +92,6 @@ async function handleCoverChange(input){
   MOCK.user.handle    = p.handle;
   MOCK.user.avatar    = p.avatar;
   MOCK.user.bio       = p.bio;
-  MOCK.user.cover     = p.cover || null;
   MOCK.user.followers = typeof p.followers === 'number' ? p.followers.toLocaleString('fr') : p.followers;
   MOCK.user.following = typeof p.following === 'number' ? p.following.toLocaleString('fr') : p.following;
   initLayout({ active:'profile', mainHTML: mainProfile(), rail: profileRail() });

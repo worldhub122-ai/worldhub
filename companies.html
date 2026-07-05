@@ -15,20 +15,16 @@
 <script src="assets/js/auth-guard.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
-(async function() {
-  const _session = await requireAuth();
-  if (!_session) return;
-
 function companyCard(c){
   return `
   <div class="card card-pad" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
     <div class="tile" style="background:var(--blue-soft);color:var(--blue);width:52px;height:52px;font-size:22px">🏢</div>
     <div style="flex:1;min-width:180px">
-      <div style="font-weight:700;font-size:15.5px">${c.name}</div>
-      <div style="color:var(--text-3);font-size:13px;margin-top:2px">${c.sector} · ${c.followers} abonnés</div>
+      <div style="font-weight:700;font-size:15.5px">${escapeHtml(c.name)}</div>
+      <div style="color:var(--text-3);font-size:13px;margin-top:2px">${escapeHtml(c.sector)} · ${escapeHtml(c.followers)} abonnés</div>
     </div>
     <span class="pill pill-green">${c.openJobs} postes ouverts</span>
-    <button class="btn btn-outline btn-sm" data-follow="off">Suivre</button>
+    <button class="btn btn-outline btn-sm" data-company-id="${c.id ?? ''}" data-follow="${c.isFollowing?'on':'off'}" onclick="handleFollowCompany(this)">${c.isFollowing ? 'Suivi(e) ✓' : 'Suivre'}</button>
   </div>`;
 }
 function companiesRail(){
@@ -43,19 +39,44 @@ function companiesRail(){
     ${['Logiciels','Design','Intelligence Artificielle','Finance','Santé'].map(s=>`<div class="row" style="padding:9px 0">${s}</div>`).join('')}
   </div>`;
 }
-function mainCompanies(){
+
+/* Follow/unfollow a company: requires login, toggles button state
+   optimistically-but-honestly (reverts if the write fails). */
+async function handleFollowCompany(btn){
+  const companyId = btn.dataset.companyId;
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    const session = await DB.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+  }
+  const wasFollowing = btn.dataset.follow === 'on';
+  btn.disabled = true;
+  try {
+    const nowFollowing = await api.followCompany(companyId);
+    btn.dataset.follow = nowFollowing ? 'on' : 'off';
+    btn.textContent = nowFollowing ? 'Suivi(e) ✓' : 'Suivre';
+  } catch (err) {
+    showError(err);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function mainCompanies(companies){
   return `
   <div class="main-col">
     <div class="card card-pad" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <div style="font-size:19px;font-weight:800">Entreprises</div>
       <div class="search-box" style="max-width:280px"><span>🔍</span><input placeholder="Rechercher une entreprise..."></div>
     </div>
-    ${MOCK.companies.map(companyCard).join('')}
+    ${companies.length ? companies.map(companyCard).join('') : `<div class="card card-pad" style="text-align:center;color:var(--text-3)">Aucune entreprise pour le moment.</div>`}
   </div>`;
 }
-initLayout({ active:'companies', mainHTML: mainCompanies(), rail: companiesRail() });
 
-})();
+async function render(){
+  const companies = await api.getCompanies();
+  initLayout({ active:'companies', mainHTML: mainCompanies(companies), rail: companiesRail() });
+}
+render();
 </script>
 </body>
 </html>

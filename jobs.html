@@ -15,10 +15,6 @@
 <script src="assets/js/auth-guard.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
-(async function() {
-  const _session = await requireAuth();
-  if (!_session) return;
-
 function jobCard(j){
   return `
   <div class="card card-pad" style="display:flex;gap:14px;align-items:flex-start">
@@ -26,19 +22,20 @@ function jobCard(j){
     <div style="flex:1">
       <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
         <div>
-          <div style="font-weight:700;font-size:15px">${j.title}</div>
-          <div style="color:var(--text-3);font-size:13px;margin-top:2px">${j.company} · ${j.place} · ${j.posted}</div>
+          <div style="font-weight:700;font-size:15px">${escapeHtml(j.title)}</div>
+          <div style="color:var(--text-3);font-size:13px;margin-top:2px">${escapeHtml(j.company)} · ${escapeHtml(j.place)} · ${escapeHtml(j.posted)}</div>
         </div>
-        <button class="btn btn-primary btn-sm">Postuler</button>
+        <button class="btn btn-primary btn-sm" data-job-id="${j.id ?? ''}" onclick="handleApply(this)">Postuler</button>
       </div>
       <div style="display:flex;gap:8px;margin-top:12px">
-        <span class="pill pill-accent">${j.tag}</span>
-        <span class="pill pill-muted">${j.type}</span>
+        <span class="pill pill-accent">${escapeHtml(j.tag)}</span>
+        <span class="pill pill-muted">${escapeHtml(j.type)}</span>
       </div>
     </div>
   </div>`;
 }
-function jobsRail(){
+async function jobsRail(){
+  const companies = await api.getCompanies();
   return `
   <div class="card card-pad">
     <h3 style="margin:0 0 12px;font-size:15px">Filtrer</h3>
@@ -49,22 +46,46 @@ function jobsRail(){
   </div>
   <div class="card">
     <div class="card-head"><h3>Top recruteurs</h3></div>
-    ${MOCK.companies.slice(0,3).map(c=>`<div class="row"><div class="tile" style="background:var(--blue-soft);color:var(--blue)">🏢</div><div><div class="row-title">${c.name}</div><div class="row-sub">${c.openJobs} postes ouverts</div></div></div>`).join('')}
+    ${companies.slice(0,3).map(c=>`<div class="row"><div class="tile" style="background:var(--blue-soft);color:var(--blue)">🏢</div><div><div class="row-title">${escapeHtml(c.name)}</div><div class="row-sub">${c.openJobs} postes ouverts</div></div></div>`).join('')}
   </div>`;
 }
-function mainJobs(){
+
+/* Apply to a job: requires login, disables the button while sending,
+   shows a clear success/error state instead of failing silently. */
+async function handleApply(btn){
+  const jobId = btn.dataset.jobId;
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    const session = await DB.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+  }
+  btn.disabled = true;
+  btn.textContent = 'Envoi...';
+  try {
+    await api.applyToJob(jobId);
+    btn.textContent = 'Candidature envoyée ✓';
+  } catch (err) {
+    showError(err);
+    btn.disabled = false;
+    btn.textContent = 'Postuler';
+  }
+}
+
+function mainJobs(jobs){
   return `
   <div class="main-col">
     <div class="card card-pad" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-      <div><div style="font-size:19px;font-weight:800">Offres d’emploi</div><div style="color:var(--text-3);font-size:13px">${MOCK.jobs.length} offres disponibles</div></div>
+      <div><div style="font-size:19px;font-weight:800">Offres d’emploi</div><div style="color:var(--text-3);font-size:13px">${jobs.length} offres disponibles</div></div>
       <button class="btn btn-primary">+ Publier une offre</button>
     </div>
-    ${MOCK.jobs.map(jobCard).join('')}
+    ${jobs.length ? jobs.map(jobCard).join('') : `<div class="card card-pad" style="text-align:center;color:var(--text-3)">Aucune offre pour le moment.</div>`}
   </div>`;
 }
-initLayout({ active:'jobs', mainHTML: mainJobs(), rail: jobsRail() });
 
-})();
+async function render(){
+  const [jobs, rail] = await Promise.all([api.getJobs(), jobsRail()]);
+  initLayout({ active:'jobs', mainHTML: mainJobs(jobs), rail });
+}
+render();
 </script>
 </body>
 </html>

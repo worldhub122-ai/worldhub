@@ -15,21 +15,17 @@
 <script src="assets/js/auth-guard.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
-(async function() {
-  const _session = await requireAuth();
-  if (!_session) return;
-
 function listingCard(l){
   return `
   <div class="card" style="overflow:hidden">
     <div style="height:110px;background:linear-gradient(135deg,var(--accent-dim),var(--accent-2));display:flex;align-items:center;justify-content:center;font-size:30px;color:#fff">🛒</div>
     <div class="card-pad">
-      <span class="pill pill-accent">${l.tag}</span>
-      <div style="font-weight:700;font-size:14.5px;margin:10px 0 4px">${l.title}</div>
-      <div style="font-size:12.5px;color:var(--text-3)">Par ${l.seller} · ⭐ ${l.rating}</div>
+      <span class="pill pill-accent">${escapeHtml(l.tag)}</span>
+      <div style="font-weight:700;font-size:14.5px;margin:10px 0 4px">${escapeHtml(l.title)}</div>
+      <div style="font-size:12.5px;color:var(--text-3)">Par ${escapeHtml(l.seller)} · ⭐ ${escapeHtml(String(l.rating))}</div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
-        <span style="font-weight:800;font-size:16px">${l.price}</span>
-        <button class="btn btn-primary btn-sm">Commander</button>
+        <span style="font-weight:800;font-size:16px">${escapeHtml(l.price)}</span>
+        <button class="btn btn-primary btn-sm" data-listing-id="${l.id ?? ''}" onclick="handleOrder(this)">Commander</button>
       </div>
     </div>
   </div>`;
@@ -47,7 +43,28 @@ function marketRail(){
     <button class="btn btn-primary" style="width:100%">+ Créer un service</button>
   </div>`;
 }
-function mainMarket(){
+
+/* Order a listing: requires login. This only records buyer intent —
+   actual payment happens through a separate checkout flow/Edge Function. */
+async function handleOrder(btn){
+  const listingId = btn.dataset.listingId;
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    const session = await DB.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+  }
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    await api.orderListing(listingId);
+    btn.textContent = 'Commandé ✓';
+  } catch (err) {
+    showError(err);
+    btn.disabled = false;
+    btn.textContent = 'Commander';
+  }
+}
+
+function mainMarket(listings){
   return `
   <div class="main-col">
     <div class="card card-pad" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
@@ -55,13 +72,16 @@ function mainMarket(){
       <div class="search-box" style="max-width:280px"><span>🔍</span><input placeholder="Rechercher un service..."></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px">
-      ${MOCK.listings.map(listingCard).join('')}
+      ${listings.length ? listings.map(listingCard).join('') : `<div class="card card-pad" style="text-align:center;color:var(--text-3)">Aucun service pour le moment.</div>`}
     </div>
   </div>`;
 }
-initLayout({ active:'marketplace', mainHTML: mainMarket(), rail: marketRail() });
 
-})();
+async function render(){
+  const listings = await api.getListings();
+  initLayout({ active:'marketplace', mainHTML: mainMarket(listings), rail: marketRail() });
+}
+render();
 </script>
 </body>
 </html>

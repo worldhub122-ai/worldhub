@@ -340,14 +340,15 @@ const DB = (() => {
   }
 
   // ---------------- Notifications ----------------
-  // يرجع إشعارات المستخدم الحالي (الأحدث أولاً)
+  // مطابق لِـ schema.sql: العمود هو read_at (timestamptz, null = غير مقروء)،
+  // وليس is_read (boolean). نفس نمط جدول messages.
   async function listNotifications(limit=30){
     assertConnected();
     const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول');
+    if(!user) return [];
     const { data, error } = await sbClient
       .from('notifications')
-      .select('id, type, content, read_at, created_at, actor:profiles!notifications_actor_id_fkey(id, first_name, last_name, handle, avatar_url), post_id')
+      .select('id, type, content, read_at, created_at, post_id, actor:profiles!notifications_actor_id_fkey(id, first_name, last_name, handle, avatar_url)')
       .eq('recipient_id', user.id)
       .order('created_at', { ascending:false })
       .limit(limit);
@@ -355,10 +356,9 @@ const DB = (() => {
     return data;
   }
 
-  async function markNotificationRead(notificationId){
+  async function markNotificationRead(notifId){
     assertConnected();
-    const { error } = await sbClient.from('notifications')
-      .update({ read_at: new Date().toISOString() }).eq('id', notificationId);
+    const { error } = await sbClient.from('notifications').update({ read_at: new Date().toISOString() }).eq('id', notifId);
     if(error) throw error;
   }
 
@@ -366,99 +366,41 @@ const DB = (() => {
     assertConnected();
     const user = await getCurrentUser();
     if(!user) return;
-    const { error } = await sbClient.from('notifications')
-      .update({ read_at: new Date().toISOString() })
-      .eq('recipient_id', user.id).is('read_at', null);
+    const { error } = await sbClient.from('notifications').update({ read_at: new Date().toISOString() }).eq('recipient_id', user.id).is('read_at', null);
     if(error) throw error;
   }
 
   async function getUnreadNotificationCount(){
-    if(!isConnected) return 0;
+    assertConnected();
     const user = await getCurrentUser();
     if(!user) return 0;
-    const { count, error } = await sbClient.from('notifications')
-      .select('*', { count:'exact', head:true })
-      .eq('recipient_id', user.id).is('read_at', null);
+    const { count, error } = await sbClient.from('notifications').select('*', { count:'exact', head:true }).eq('recipient_id', user.id).is('read_at', null);
     if(error) throw error;
     return count || 0;
   }
 
-  // اشتراك لحظي بالإشعارات الجديدة (يتطلب تفعيل Realtime على جدول notifications)
-  function subscribeToNotifications(myUserId, onInsert){
+  // ---------------- Worlds (المجتمعات/الفئات) ----------------
+  // ملاحظة: لا توجد سياسة RLS لجدول "worlds" في ملف السياسات المرفق،
+  // مما يعني أنه غالباً غير موجود كجدول فعلي — الأقسام (Programmation,
+  // IA & ML...) هي بيانات مرجعية ثابتة في الواجهة، وليست "بيانات تجريبية"
+  // يجب استبدالها بالضرورة. هذه الدالة تحاول القراءة لو أُنشئ الجدول
+  // مستقبلاً، وتتراجع بأمان إلى MOCK.worlds حالياً (وهي غير مؤكَّدة).
+  async function listWorlds(){
     assertConnected();
-    return sbClient.channel('notifications-' + myUserId)
-      .on('postgres_changes', { event:'INSERT', schema:'public', table:'notifications', filter:`recipient_id=eq.${myUserId}` },
-          payload => onInsert(payload.new))
-      .subscribe();
-  }
-
-  // ---------------- Dashboard stats (Issue: hardcoded dashboard numbers) ----------------
-  async function getDashboardStats(userId){
-    assertConnected();
-    const [{ count: posts }, { count: followers }, likesRes, commentsRes] = await Promise.all([
-      sbClient.from('posts').select('*', { count:'exact', head:true }).eq('author_id', userId),
-      sbClient.from('followers').select('*', { count:'exact', head:true }).eq('following_id', userId),
-      sbClient.from('posts').select('likes(id)').eq('author_id', userId),
-      sbClient.from('posts').select('comments(id)').eq('author_id', userId),
-    ]);
-    const totalLikes = (likesRes.data||[]).reduce((s,p)=>s+(p.likes?.length||0),0);
-    const totalComments = (commentsRes.data||[]).reduce((s,p)=>s+(p.comments?.length||0),0);
-    return {
-      posts: posts||0,
-      followers: followers||0,
-      interactions: totalLikes + totalComments,
-      views: null, /* requires a page-view tracking table — not implemented yet */
-    };
-  }
-
-  // ---------------- Storage: avatar / cover uploads ----------------
-  async function uploadAvatar(file){
-    assertConnected();
-    const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول');
-    const ext = (file.name.split('.').pop()||'jpg').toLowerCase();
-    const path = `${user.id}/avatar_${Date.now()}.${ext}`;
-    const { error: upErr } = await sbClient.storage.from('avatars').upload(path, file, { cacheControl:'3600', upsert:true });
-    if(upErr) throw upErr;
-    const { data } = sbClient.storage.from('avatars').getPublicUrl(path);
-    await updateProfile(user.id, { avatar_url: data.publicUrl });
-    return data.publicUrl;
-  }
-
-  async function uploadCover(file){
-    assertConnected();
-    const user = await getCurrentUser();
-    if(!user) throw new Error('يجب تسجيل الدخول');
-    const ext = (file.name.split('.').pop()||'jpg').toLowerCase();
-    const path = `${user.id}/cover_${Date.now()}.${ext}`;
-    const { error: upErr } = await sbClient.storage.from('covers').upload(path, file, { cacheControl:'3600', upsert:true });
-    if(upErr) throw upErr;
-    const { data } = sbClient.storage.from('covers').getPublicUrl(path);
-    await updateProfile(user.id, { cover_url: data.publicUrl });
-    return data.publicUrl;
-  }
-
-  // ---------------- Account management ----------------
-  async function updateEmail(newEmail){
-    assertConnected();
-    const { error } = await sbClient.auth.updateUser({ email:newEmail });
+    const { data, error } = await sbClient.from('worlds').select('*').order('member_count', { ascending:false });
     if(error) throw error;
-  }
-
-  async function updatePassword(newPassword){
-    assertConnected();
-    const { error } = await sbClient.auth.updateUser({ password:newPassword });
-    if(error) throw error;
-  }
-
-  // حذف الحساب يتطلب صلاحيات "service role" التي لا يمكن استخدامها من المتصفح لأسباب أمنية.
-  // يجب إنشاء Supabase Edge Function (مثلاً "delete-account") تُستدعى هنا وتُنفّذ الحذف من جهة الخادم.
-  async function deleteAccount(){
-    assertConnected();
-    const { data, error } = await sbClient.functions.invoke('delete-account');
-    if(error) throw error;
-    await signOut();
     return data;
+  }
+
+  // ---------------- Unread messages (لعداد شارة الرسائل) ──
+  // مؤكَّد من RLS: recipient_id هو العمود الصحيح في جدول messages.
+  async function getUnreadMessageCount(){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) return 0;
+    const { count, error } = await sbClient.from('messages').select('*', { count:'exact', head:true }).eq('recipient_id', user.id).is('read_at', null);
+    if(error) throw error;
+    return count || 0;
   }
 
   // بحث بسيط عن مستخدمين بالاسم أو المعرّف لبدء محادثة جديدة
@@ -476,6 +418,188 @@ const DB = (() => {
     return user ? data.filter(p=>p.id !== user.id) : data;
   }
 
+  // ---------------- Worlds (membership) ----------------
+  async function joinWorld(worldId){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('يجب تسجيل الدخول للانضمام');
+    const { error } = await sbClient.from('world_members').insert({ world_id: worldId, user_id: user.id });
+    if(error) throw error;
+  }
+
+  async function leaveWorld(worldId){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('يجب تسجيل الدخول');
+    const { error } = await sbClient.from('world_members').delete().eq('world_id', worldId).eq('user_id', user.id);
+    if(error) throw error;
+  }
+
+  async function isWorldMember(worldId){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) return false;
+    const { data } = await sbClient.from('world_members').select('*').eq('world_id', worldId).eq('user_id', user.id).maybeSingle();
+    return !!data;
+  }
+
+  // ---------------- Companies ----------------
+  async function listCompanies(){
+    assertConnected();
+    const { data, error } = await sbClient.from('companies').select('*, jobs(count), company_followers(count)').order('created_at', { ascending:false });
+    if(error) throw error;
+    return data;
+  }
+
+  async function createCompany({ name, sector, description, website, logoUrl, coverUrl }){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('يجب تسجيل الدخول لإنشاء صفحة شركة');
+    const { data, error } = await sbClient.from('companies')
+      .insert({ owner_id:user.id, name, sector, description, website, logo_url:logoUrl, cover_url:coverUrl })
+      .select().single();
+    if(error) throw error;
+    return data;
+  }
+
+  async function toggleFollowCompany(companyId){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('يجب تسجيل الدخول للمتابعة');
+    const { data: existing } = await sbClient.from('company_followers').select('*').eq('company_id', companyId).eq('user_id', user.id).maybeSingle();
+    if(existing){
+      await sbClient.from('company_followers').delete().eq('company_id', companyId).eq('user_id', user.id);
+      return false;
+    }else{
+      await sbClient.from('company_followers').insert({ company_id:companyId, user_id:user.id });
+      return true;
+    }
+  }
+
+  // ---------------- Jobs ----------------
+  async function listJobs({ worldId=null, companyId=null } = {}){
+    assertConnected();
+    let q = sbClient.from('jobs')
+      .select('*, company:companies(id, name, logo_url, sector)')
+      .eq('status', 'open')
+      .order('created_at', { ascending:false });
+    if(worldId) q = q.eq('world_id', worldId);
+    if(companyId) q = q.eq('company_id', companyId);
+    const { data, error } = await q;
+    if(error) throw error;
+    return data;
+  }
+
+  async function createJob({ companyId, title, description, location, jobType, worldId, isRemote }){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('يجب تسجيل الدخول لنشر عرض عمل');
+    const { data, error } = await sbClient.from('jobs')
+      .insert({ company_id:companyId, posted_by:user.id, title, description, location, job_type:jobType, world_id:worldId, is_remote:isRemote })
+      .select().single();
+    if(error) throw error;
+    return data;
+  }
+
+  async function applyToJob(jobId, coverNote=''){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('يجب تسجيل الدخول للتقديم');
+    const { data, error } = await sbClient.from('job_applications')
+      .insert({ job_id:jobId, applicant_id:user.id, cover_note:coverNote })
+      .select().single();
+    if(error) throw error;
+    return data;
+  }
+
+  // ---------------- Events ----------------
+  async function listEvents({ worldId=null, upcoming=true } = {}){
+    assertConnected();
+    let q = sbClient.from('events')
+      .select('*, host:profiles(id, first_name, last_name, avatar_url), event_attendees(user_id, status)')
+      .order('starts_at', { ascending:true });
+    if(worldId) q = q.eq('world_id', worldId);
+    if(upcoming) q = q.gte('starts_at', new Date().toISOString());
+    const { data, error } = await q;
+    if(error) throw error;
+    return data;
+  }
+
+  async function createEvent({ title, description, location, isOnline, startsAt, endsAt, worldId, coverUrl }){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('يجب تسجيل الدخول لإنشاء حدث');
+    const { data, error } = await sbClient.from('events')
+      .insert({ host_id:user.id, title, description, location, is_online:isOnline, starts_at:startsAt, ends_at:endsAt, world_id:worldId, cover_url:coverUrl })
+      .select().single();
+    if(error) throw error;
+    return data;
+  }
+
+  async function rsvpEvent(eventId, status='going'){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('يجب تسجيل الدخول للمشاركة');
+    const { data, error } = await sbClient.from('event_attendees')
+      .upsert({ event_id:eventId, user_id:user.id, status }, { onConflict:'event_id,user_id' })
+      .select().single();
+    if(error) throw error;
+    return data;
+  }
+
+  // ---------------- Marketplace ----------------
+  async function listListings({ category=null } = {}){
+    assertConnected();
+    let q = sbClient.from('listings')
+      .select('*, seller:profiles(id, first_name, last_name, avatar_url), listing_reviews(rating)')
+      .eq('status', 'active')
+      .order('created_at', { ascending:false });
+    if(category) q = q.eq('category', category);
+    const { data, error } = await q;
+    if(error) throw error;
+    return data;
+  }
+
+  async function createListing({ title, description, category, priceCents, currency='EUR', coverUrl }){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('يجب تسجيل الدخول لإنشاء خدمة');
+    const { data, error } = await sbClient.from('listings')
+      .insert({ seller_id:user.id, title, description, category, price_cents:priceCents, currency, cover_url:coverUrl })
+      .select().single();
+    if(error) throw error;
+    return data;
+  }
+
+  async function orderListing(listingId){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('يجب تسجيل الدخول للطلب');
+    // NOTE: this only records intent to buy. Real payment capture must go
+    // through a Supabase Edge Function calling Stripe (or similar) — never
+    // handle card numbers or final charge amounts directly in the browser.
+    const { data, error } = await sbClient.from('listing_orders')
+      .insert({ listing_id:listingId, buyer_id:user.id })
+      .select().single();
+    if(error) throw error;
+    return data;
+  }
+
+  // ---------------- Dashboard ----------------
+  async function getDashboardSummary(){
+    assertConnected();
+    const { data, error } = await sbClient.rpc('get_dashboard_summary');
+    if(error) throw error;
+    return Array.isArray(data) ? data[0] : data;
+  }
+
+  async function getDailyInteractions(days=30){
+    assertConnected();
+    const { data, error } = await sbClient.rpc('get_daily_interactions', { p_days: days });
+    if(error) throw error;
+    return data;
+  }
+
   return {
     isConnected, sbClient,
     signUp, signIn, signOut, signInWithOAuth, getSession, getCurrentUser,
@@ -486,10 +610,13 @@ const DB = (() => {
     listConversations, listMessages, sendMessage, markMessagesRead,
     subscribeToIncomingMessages, subscribeToReadReceipts, typingChannel, removeChannel,
     searchProfiles,
-    listNotifications, markNotificationRead, markAllNotificationsRead,
-    getUnreadNotificationCount, subscribeToNotifications,
-    getDashboardStats,
-    uploadAvatar, uploadCover,
-    updateEmail, updatePassword, deleteAccount,
+    listNotifications, markNotificationRead, markAllNotificationsRead, getUnreadNotificationCount,
+    listWorlds, getUnreadMessageCount,
+    joinWorld, leaveWorld, isWorldMember,
+    listCompanies, createCompany, toggleFollowCompany,
+    listJobs, createJob, applyToJob,
+    listEvents, createEvent, rsvpEvent,
+    listListings, createListing, orderListing,
+    getDashboardSummary, getDailyInteractions,
   };
 })();
