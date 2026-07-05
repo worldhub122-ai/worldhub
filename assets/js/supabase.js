@@ -535,15 +535,44 @@ const DB = (() => {
     return data;
   }
 
-  async function sendMessage(recipientId, content){
+  async function sendMessage(recipientId, content, imageUrl, videoUrl){
     assertConnected();
     const user = await getCurrentUser();
     if(!user) throw new Error('Vous devez être connecté(e) pour envoyer un message.');
     const { data, error } = await sbClient.from('messages')
-      .insert({ sender_id:user.id, recipient_id:recipientId, content })
+      .insert({
+        sender_id: user.id,
+        recipient_id: recipientId,
+        content,
+        image_url: imageUrl || null,
+        video_url: videoUrl || null,
+      })
       .select().single();
     if(error) throw error;
     return data;
+  }
+
+  // يعدّل نص رسالة أرسلتها أنا (RLS تتكفل بمنع تعديل رسائل الغير)
+  async function editMessage(messageId, content){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('Vous devez être connecté(e) pour modifier un message.');
+    const { data, error } = await sbClient.from('messages')
+      .update({ content, edited_at: new Date().toISOString() })
+      .eq('id', messageId)
+      .select().single();
+    if(error) throw error;
+    return data;
+  }
+
+  // يحذف رسالة أرسلتها أنا (RLS تتكفل بمنع حذف رسائل الغير)
+  async function deleteMessage(messageId){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('Vous devez être connecté(e) pour supprimer un message.');
+    const { error } = await sbClient.from('messages').delete().eq('id', messageId);
+    if(error) throw error;
+    return true;
   }
 
   // يضع علامة "مقروءة" على كل رسائل otherUserId الموجّهة لي
@@ -945,7 +974,7 @@ const DB = (() => {
     toggleRepost, quoteRepost, getRepostStats,
     toggleLike, addComment, toggleFollow,
     toggleSavePost, listSavedPostIds, listSavedPosts, getPost,
-    listConversations, listMessages, sendMessage, markMessagesRead,
+    listConversations, listMessages, sendMessage, editMessage, deleteMessage, markMessagesRead,
     subscribeToIncomingMessages, subscribeToReadReceipts, typingChannel, removeChannel,
     searchProfiles, searchAll,
     listNotifications, markNotificationRead, markAllNotificationsRead, getUnreadNotificationCount,
