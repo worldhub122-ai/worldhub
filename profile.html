@@ -94,15 +94,24 @@ function mainProfile(){
   </div>`;
 }
 
+/* Renders the current user's real posts (fetched from Supabase via
+   api.getUserPosts) instead of the old hardcoded MOCK.posts sample.
+   Falls back to a friendly empty-state message when there are none. */
+let _myPosts = [];
 function profilePostsTabHTML(){
-  return MOCK.posts.slice(0,2).map(p=>`
+  if (!_myPosts.length) {
+    return `<div class="card-pad" style="text-align:center;color:var(--text-3)">Aucune publication pour le moment.</div>`;
+  }
+  return _myPosts.map(p=>`
         <div class="post">
           <div class="post-head">
-            <img class="avatar" src="${MOCK.user.avatar}" style="width:40px;height:40px">
-            <div><div class="u-name">${escapeHtml(MOCK.user.name)} <span class="badge-world">${escapeHtml(p.world)}</span></div><div class="u-meta">${escapeHtml(p.time)}</div></div>
+            <img class="avatar" src="${p.avatarUrl || MOCK.user.avatar}" style="width:40px;height:40px">
+            <div><div class="u-name">${escapeHtml(MOCK.user.name)} ${p.world?`<span class="badge-world">${escapeHtml(p.world)}</span>`:''}</div><div class="u-meta">${escapeHtml(p.time)}</div></div>
             <span class="more">⋯</span>
           </div>
-          <div class="post-text">${escapeHtml(p.text)}</div>
+          <div class="post-text">${renderPostText(p.text)}</div>
+          ${p.imageUrl ? `<img src="${p.imageUrl}" style="max-width:100%;border-radius:10px;margin-top:8px;display:block">` : ''}
+          ${p.videoUrl ? `<video src="${p.videoUrl}" controls style="max-width:100%;border-radius:10px;margin-top:8px;display:block"></video>` : ''}
           <div class="post-stats"><span>❤️ ${p.likes} j’aime</span><span>${p.comments} commentaires</span></div>
         </div>`).join('');
 }
@@ -248,6 +257,8 @@ async function handleCoverSelect(evt){
   MOCK.user.bio       = p.bio;
   MOCK.user.followers = typeof p.followers === 'number' ? p.followers.toLocaleString('fr') : p.followers;
   MOCK.user.following = typeof p.following === 'number' ? p.following.toLocaleString('fr') : p.following;
+  _myPosts = p.id ? await api.getUserPosts(p.id) : [];
+  MOCK.user.posts = _myPosts.length;
   initLayout({ active:'profile', mainHTML: mainProfile(), rail: profileRail() });
 })();
 
