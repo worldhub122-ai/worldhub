@@ -355,6 +355,20 @@ async function handleCoverSelect(evt){
   initLayout({ active:'profile', mainHTML: mainProfile(), rail: profileRail() });
 })();
 
+/* Ces fonctions sont appelées depuis des attributs onclick/onchange/oninput
+   inline dans le HTML généré ci-dessus. Ces attributs s'exécutent dans le
+   scope global (window), alors que les fonctions ci-dessus sont déclarées
+   à l'intérieur de cette IIFE async — donc invisibles depuis l'extérieur
+   tant qu'on ne les expose pas explicitement sur window.
+   (Bug : "openEditProfileModal is not defined" au clic sur "Modifier le
+   profil", même chose pour les autres actions du profil.) */
+window.openEditProfileModal = openEditProfileModal;
+window.submitEditProfile = submitEditProfile;
+window.handleEpHandleInput = handleEpHandleInput;
+window.handleAvatarSelect = handleAvatarSelect;
+window.handleCoverSelect = handleCoverSelect;
+window.switchProfileTab = switchProfileTab;
+
 })();
 </script>
 </body>

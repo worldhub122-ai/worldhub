@@ -236,6 +236,18 @@ window.addEventListener('beforeunload', () => {
   if (_typingChannel) DB.removeChannel(_typingChannel);
 });
 
+/* Ces fonctions sont appelées depuis des attributs onclick/onkeydown
+   inline dans le HTML généré ci-dessus, qui s'exécutent dans le scope
+   global — invisibles depuis l'extérieur de cette IIFE tant qu'on ne
+   les expose pas explicitement sur window (même bug que sur
+   profile.html : "openConversation is not defined", etc). */
+window.openConversation = openConversation;
+window.handleCallAction = handleCallAction;
+window.handleAttachFile = handleAttachFile;
+window.toggleChatInfo = toggleChatInfo;
+window.sendCurrentMessage = sendCurrentMessage;
+window.handleTypingInput = handleTypingInput;
+
 })();
 </script>
 </body>

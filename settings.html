@@ -108,6 +108,10 @@ async function render(){
 }
 render();
 
+/* Même bug que sur profile.html : appelée depuis onchange inline
+   (scope global) mais déclarée à l'intérieur de cette IIFE async. */
+window.onPrefChange = onPrefChange;
+
 })();
 </script>
 </body>

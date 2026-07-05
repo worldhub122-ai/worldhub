@@ -111,6 +111,13 @@ async function render(){
 }
 render();
 
+/* Même bug que sur profile.html : ces fonctions sont appelées depuis des
+   attributs onclick inline (scope global) mais déclarées à l'intérieur
+   de cette IIFE async — il faut les exposer explicitement sur window. */
+window.handleNotifClick = handleNotifClick;
+window.handleMarkAllRead = handleMarkAllRead;
+window.setNotifFilter = setNotifFilter;
+
 })();
 </script>
 </body>
