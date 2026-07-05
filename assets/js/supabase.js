@@ -104,12 +104,12 @@ const DB = (() => {
   // حتى تقدر الواجهة تعرض "فلان أعاد نشر منشور علان" مع بطاقة المنشور
   // الأصلي مضمّنة (Issue: إعادة النشر ما كانت موجودة إطلاقاً).
   const POST_SELECT = `id, content, image_url, video_url, world_id, created_at, edited_at, repost_of,
-    author:profiles(id, first_name, last_name, handle, avatar_url),
+    author:profiles!posts_author_id_fkey(id, first_name, last_name, handle, avatar_url),
     likes(user_id),
     comments(id, content, created_at, author:profiles(id, first_name, last_name, handle, avatar_url)),
     polls(id, question),
     original:posts!repost_of(id, content, image_url, video_url, created_at,
-      author:profiles(id, first_name, last_name, handle, avatar_url))`;
+      author:profiles!posts_author_id_fkey(id, first_name, last_name, handle, avatar_url))`;
 
   // يرجع منشورات مع اسم الكاتب، عدد الإعجابات، وهل المستخدم الحالي أعجب بها
   async function listPosts({ worldId=null, authorId=null, limit=30 } = {}){

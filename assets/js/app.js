@@ -719,6 +719,23 @@ const api = {
     return MOCK.posts;
   },
 
+  /* ── Posts by a specific author (Issue: profile.html's "Publications"
+     tab always rendered MOCK.posts, even when Supabase was connected —
+     it never actually queried the real posts table for the user). ── */
+  async getUserPosts(authorId) {
+    if (typeof DB !== 'undefined' && DB.isConnected && authorId) {
+      try {
+        const rows = await DB.listPosts({ authorId, limit: 30 });
+        const mapped = rows.map(_mapPostRow);
+        await _hydrateRepostStats(mapped);
+        return mapped;
+      } catch (err) {
+        console.warn('[WorldHub] getUserPosts fell back to mock:', err.message);
+      }
+    }
+    return MOCK.posts;
+  },
+
   /* ── Worlds ──
      Attempts a real `worlds` table read; falls back to MOCK.worlds
      if the table doesn't exist yet or the query fails. This mirrors
