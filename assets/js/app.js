@@ -71,22 +71,6 @@ const MOCK = {
     { day:'05', mon:'JUIL', title:'Web Dev Bootcamp', place:'Lyon, France', desc:'Bootcamp intensif sur les technologies web modernes.', going:'150 participants' },
   ],
 
-  conversations: [
-    { name:'Sarah Parker', avatar:'https://i.pravatar.cc/80?img=5',  preview:'Oui, il a l\'air incroyable 🎉', time:'10:33', online:true, unread:0 },
-    { name:'John Smith',   avatar:'https://i.pravatar.cc/80?img=32', preview:'Ça va super ! Et toi ?',        time:'09:10', online:true, unread:2 },
-    { name:'Alex Johnson', avatar:'https://i.pravatar.cc/80?img=15', preview:'À demain alors 👋',              time:'Hier',  online:false, unread:0 },
-    { name:'Mike Wilson',  avatar:'https://i.pravatar.cc/80?img=22', preview:'Tu as vu le nouveau framework ?',time:'Hier',  online:false, unread:0 },
-    { name:'Emma Davis',   avatar:'https://i.pravatar.cc/80?img=9',  preview:'Merci pour l\'aide !',            time:'Lun',   online:false, unread:0 },
-    { name:'David Brown',  avatar:'https://i.pravatar.cc/80?img=51', preview:'On se cale une réunion ?',       time:'Lun',   online:false, unread:0 },
-  ],
-
-  chatThread: [
-    { from:'them', text:'Salut Alex ! Comment ça va ?', time:'10:20' },
-    { from:'me',   text:'Ça va super ! Et toi ?',        time:'10:21' },
-    { from:'them', text:'Bien aussi ! Tu as vu le nouveau framework ?', time:'10:30' },
-    { from:'me',   text:'Oui, il a l\'air incroyable 🎉', time:'10:33' },
-  ],
-
   notifications: [
     { id:'m1', type:'like',    icon:'❤️', color:'pink',   text:'Sarah Parker a aimé votre publication',              time:'il y a 5 min', unread:true },
     { id:'m2', type:'comment', icon:'💬', color:'blue',   text:'John Smith a commenté votre publication',            time:'il y a 20 min', unread:true },
@@ -859,45 +843,47 @@ const api = {
     return null; // signal "unknown" so caller can decide whether to keep static badge or hide it
   },
 
-  /* ── Conversations ── */
+  /* ── Conversations ──
+     Issue fixed: this used to silently swallow any DB.listConversations()
+     error and fall back to a hardcoded list of fake people (Sarah Parker,
+     John Smith...), which is why the messages page could show "phantom"
+     users that don't exist in the database and never actually send
+     anything. There is no meaningful "demo mode" for real 1:1 messaging,
+     so a failure/disconnection now surfaces as a real, visible error
+     instead of fake data. */
   async getConversations() {
-    if (typeof DB !== 'undefined' && DB.isConnected) {
-      try {
-        const convs = await DB.listConversations();
-        return convs.map(c => ({
-          name:    (c.other.first_name + ' ' + (c.other.last_name || '')).trim(),
-          avatar:  c.other.avatar_url || 'https://i.pravatar.cc/80?u=' + c.other.id,
-          preview: c.lastMessage?.content || '',
-          time:    _relTime(c.lastMessage?.created_at),
-          online:  false,
-          unread:  c.unread || 0,
-          otherId: c.other.id,
-        }));
-      } catch (err) {
-        console.warn('[WorldHub] getConversations fell back to mock:', err.message);
-      }
+    if (typeof DB === 'undefined' || !DB.isConnected) {
+      throw new Error('La messagerie nécessite une connexion à Supabase.');
     }
-    return MOCK.conversations;
+    const convs = await DB.listConversations();
+    return convs.map(c => ({
+      name:    (c.other.first_name + ' ' + (c.other.last_name || '')).trim(),
+      avatar:  c.other.avatar_url || 'https://i.pravatar.cc/80?u=' + c.other.id,
+      preview: c.lastMessage?.image_url ? '📷 Photo' : (c.lastMessage?.video_url ? '🎬 Vidéo' : (c.lastMessage?.content || '')),
+      time:    _relTime(c.lastMessage?.created_at),
+      online:  false,
+      unread:  c.unread || 0,
+      otherId: c.other.id,
+    }));
   },
 
   /* ── Full message thread with one other user ── */
   async getMessages(otherId) {
-    if (typeof DB !== 'undefined' && DB.isConnected && otherId) {
-      try {
-        const rows = await DB.listMessages(otherId);
-        const me = await DB.getCurrentUser();
-        return rows.map(m => ({
-          id: m.id,
-          from: m.sender_id === me.id ? 'me' : 'them',
-          text: m.content,
-          time: _relTime(m.created_at),
-          read: !!m.read_at,
-        }));
-      } catch (err) {
-        console.warn('[WorldHub] getMessages fell back to mock:', err.message);
-      }
+    if (typeof DB === 'undefined' || !DB.isConnected) {
+      throw new Error('La messagerie nécessite une connexion à Supabase.');
     }
-    return MOCK.chatThread;
+    if (!otherId) return [];
+    const [rows, me] = await Promise.all([DB.listMessages(otherId), DB.getCurrentUser()]);
+    return rows.map(m => ({
+      id: m.id,
+      from: m.sender_id === me.id ? 'me' : 'them',
+      text: m.content,
+      imageUrl: m.image_url || null,
+      videoUrl: m.video_url || null,
+      time: _relTime(m.created_at),
+      read: !!m.read_at,
+      edited: !!m.edited_at,
+    }));
   },
 
   /* ── Mark a thread's incoming messages as read (Issue: real-time
@@ -909,13 +895,47 @@ const api = {
     return false;
   },
 
-  /* ── Send message ── */
-  async sendMessage(recipientId, content) {
-    if (typeof DB !== 'undefined' && DB.isConnected && recipientId) {
-      return DB.sendMessage(recipientId, content);
+  /* ── Send message (Issue: send button silently did nothing when no
+     real backend was connected — now it fails loudly with a clear
+     error instead of pretending to succeed). Supports an optional
+     image/video attachment, uploaded beforehand via api.uploadMessageMedia. ── */
+  async sendMessage(recipientId, content, imageUrl, videoUrl) {
+    if (typeof DB === 'undefined' || !DB.isConnected) {
+      throw new Error('Vous devez être connecté(e) pour envoyer un message.');
     }
-    console.log('sendMessage->mock', recipientId, content);
-    return true;
+    if (!recipientId) {
+      throw new Error('Choisissez une conversation avant d\'envoyer un message.');
+    }
+    return DB.sendMessage(recipientId, content, imageUrl, videoUrl);
+  },
+
+  /* ── Edit / delete a message the current user sent ── */
+  async editMessage(messageId, content) {
+    if (typeof DB === 'undefined' || !DB.isConnected) throw new Error('Non connecté(e).');
+    return DB.editMessage(messageId, content);
+  },
+  async deleteMessage(messageId) {
+    if (typeof DB === 'undefined' || !DB.isConnected) throw new Error('Non connecté(e).');
+    return DB.deleteMessage(messageId);
+  },
+
+  /* ── Search people to start a new conversation (Issue: DB.searchProfiles
+     already existed in supabase.js for exactly this purpose — its own
+     comment says so — but no "new message" UI anywhere ever called it,
+     so there was literally no way to message someone before they
+     already had an existing conversation). ── */
+  async searchPeople(query) {
+    if (typeof DB === 'undefined' || !DB.isConnected) {
+      throw new Error('La recherche nécessite une connexion à Supabase.');
+    }
+    return DB.searchProfiles(query);
+  },
+
+  /* ── Upload an image/video attachment for a message, reusing the same
+     Storage bucket as post media. ── */
+  async uploadMessageMedia(file) {
+    if (typeof DB === 'undefined' || !DB.isConnected) throw new Error('Non connecté(e).');
+    return DB.uploadPostMedia(file);
   },
 
   /* ── Create post (Issue 3, 5: text + image/video uploads) ──

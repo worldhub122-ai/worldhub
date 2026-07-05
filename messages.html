@@ -19,27 +19,32 @@
   const _session = await requireAuth();
   if (!_session) return;
 
-/* State: real conversations + which one is open. Falls back to MOCK
-   shape automatically since api.getConversations() already normalises
-   both real and mock data to the same fields (name, avatar, preview,
-   time, unread, otherId). */
+/* State: real conversations only (Issue fixed: this page used to fall
+   back to a hardcoded list of fake people — Sarah Parker, John Smith...
+   — whenever DB.listConversations() failed for any reason, including
+   real backend errors. api.getConversations()/getMessages() now throw
+   instead, and this page handles that explicitly with real error/empty
+   states instead of ever showing invented users. */
 let _conversations = [];
+let _messagesById = {};
 let _activeOtherId = null;
 let _myUserId = null;
 
-/* ── Realtime plumbing (Issue: DB.subscribeToIncomingMessages,
-   DB.subscribeToReadReceipts and DB.typingChannel already existed in
-   supabase.js — fully working — but nothing on this page ever called
-   them. Messages only ever appeared after a manual page reload, there
-   was no live "typing..." indicator, and read ticks never updated. ── */
+/* ── Realtime plumbing (DB.subscribeToIncomingMessages,
+   DB.subscribeToReadReceipts and DB.typingChannel live in supabase.js). ── */
 let _incomingChannel = null;
 let _readChannel = null;
 let _typingChannel = null;
 let _typingHideTimer = null;
 let _typingBroadcastTimer = null;
 
+function _indexMessages(thread){
+  _messagesById = {};
+  thread.forEach(m => { if (m.id) _messagesById[m.id] = m; });
+}
+
 function chatList(){
-  return _conversations.map((c,i)=>`
+  return _conversations.map((c)=>`
     <div class="chat-item ${c.otherId===_activeOtherId ? 'active':''}" data-other-id="${c.otherId ?? ''}" onclick="openConversation('${c.otherId ?? ''}')">
       <div style="position:relative;flex:none">
         <img class="avatar" src="${c.avatar}" style="width:42px;height:42px">
@@ -52,12 +57,48 @@ function chatList(){
       ${c.unread ? `<span class="nav-badge" style="background:var(--accent);color:#fff">${c.unread}</span>`:''}
     </div>`).join('');
 }
+
+/* "⋯" menu on my own bubbles only — reuses the generic toggleMoreMenu /
+   #moremenu-<id> / outside-click machinery already defined in app.js
+   for posts, so no duplicate plumbing is needed here. */
+function messageMoreMenuHTML(id){
+  return `
+  <span class="more" style="cursor:pointer;font-size:13px;color:var(--text-3);position:relative;flex:none" onclick="toggleMoreMenu(event,'msg-${id}')">⋯
+    <div class="more-menu" id="moremenu-msg-${id}" hidden style="position:absolute;top:20px;right:0;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);min-width:140px;z-index:20;box-shadow:0 8px 20px rgba(0,0,0,.4);text-align:left">
+      <div class="row" style="padding:9px 14px;cursor:pointer" onclick="event.stopPropagation();openEditMessageModal('${id}')">✏️ Modifier</div>
+      <div class="row" style="padding:9px 14px;cursor:pointer;color:var(--red)" onclick="event.stopPropagation();handleDeleteMessage('${id}')">🗑️ Supprimer</div>
+    </div>
+  </span>`;
+}
+
 function chatBubbles(thread){
-  return thread.map(m=>`
-    <div class="bubble-wrap" data-msg-id="${m.id ?? ''}" style="display:flex;flex-direction:column;align-items:${m.from==='me'?'flex-end':'flex-start'}">
-      <div class="bubble ${m.from==='me'?'out':'in'}">${escapeHtml(m.text)}</div>
-      <span class="bubble-time">${escapeHtml(m.time)}${m.from==='me' ? ` · <span class="read-tick" style="color:${m.read?'var(--accent)':'var(--text-3)'}">${m.read?'✓✓':'✓'}</span>` : ''}</span>
-    </div>`).join('');
+  return thread.map(m=>{
+    const mine = m.from === 'me';
+    const mediaHTML = m.imageUrl
+      ? `<img src="${m.imageUrl}" style="max-width:260px;max-height:320px;border-radius:12px;display:block;${m.text ? 'margin-bottom:6px' : ''}">`
+      : (m.videoUrl ? `<video src="${m.videoUrl}" controls style="max-width:260px;border-radius:12px;display:block;${m.text ? 'margin-bottom:6px' : ''}"></video>` : '');
+    const textHTML = m.text ? escapeHtml(m.text) : '';
+    return `
+    <div class="bubble-wrap" data-msg-id="${m.id ?? ''}" style="display:flex;flex-direction:column;align-items:${mine?'flex-end':'flex-start'}">
+      <div style="display:flex;align-items:flex-end;gap:6px;${mine?'flex-direction:row-reverse':''}">
+        <div class="bubble ${mine?'out':'in'}">${mediaHTML}${textHTML}</div>
+        ${mine && m.id ? messageMoreMenuHTML(m.id) : ''}
+      </div>
+      <span class="bubble-time">${escapeHtml(m.time)}${m.edited ? ' · modifié' : ''}${mine ? ` · <span class="read-tick" style="color:${m.read?'var(--accent)':'var(--text-3)'}">${m.read?'✓✓':'✓'}</span>` : ''}</span>
+    </div>`;
+  }).join('');
+}
+
+function emptyStateHTML(message, icon, showNewConvoBtn){
+  return `
+  <div class="main-col">
+    <div class="card card-pad" style="text-align:center;padding:56px 24px">
+      <div style="font-size:34px;margin-bottom:10px">${icon || '💬'}</div>
+      <div style="font-weight:700;margin-bottom:6px">Messagerie</div>
+      <p style="font-size:13.5px;color:var(--text-3);margin:0 auto 16px;max-width:360px">${escapeHtml(message)}</p>
+      ${showNewConvoBtn ? `<button class="btn btn-primary" onclick="openNewConversationModal()">✏️ Nouvelle conversation</button>` : ''}
+    </div>
+  </div>`;
 }
 
 function shellHTML(active, thread){
@@ -65,8 +106,9 @@ function shellHTML(active, thread){
   <div class="main-col" style="max-width:none">
     <div class="chat-shell">
       <div class="chat-list" id="chatListPane">
-        <div style="padding:14px 16px;border-bottom:1px solid var(--border-soft)">
-          <div class="search-box" style="max-width:none"><span>🔍</span><input placeholder="Rechercher des messages..."></div>
+        <div style="padding:14px 16px;border-bottom:1px solid var(--border-soft);display:flex;gap:8px;align-items:center">
+          <div class="search-box" style="max-width:none;flex:1"><span>🔍</span><input placeholder="Rechercher des messages..."></div>
+          <span class="icon-btn" title="Nouvelle conversation" onclick="openNewConversationModal()">✏️</span>
         </div>
         ${chatList()}
       </div>
@@ -79,10 +121,18 @@ function shellHTML(active, thread){
           </div>
         </div>
         <div class="chat-body" id="chatBody">${chatBubbles(thread)}</div>
+        <div id="msgErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:8px 14px;font-size:12.5px;margin:0 18px 8px"></div>
         <div class="chat-input-bar">
-          <span class="icon-btn" onclick="handleAttachFile()">📎</span>
+          <span class="icon-btn" style="position:relative" onclick="toggleMoreMenu(event,'attach')">📎
+            <div class="more-menu" id="moremenu-attach" hidden style="position:absolute;bottom:34px;left:0;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);min-width:140px;z-index:20;box-shadow:0 8px 20px rgba(0,0,0,.4);text-align:left">
+              <div class="row" style="padding:9px 14px;cursor:pointer" onclick="event.stopPropagation();document.getElementById('moremenu-attach').hidden=true;document.getElementById('msgImageInput').click()">🖼️ Image</div>
+              <div class="row" style="padding:9px 14px;cursor:pointer" onclick="event.stopPropagation();document.getElementById('moremenu-attach').hidden=true;document.getElementById('msgVideoInput').click()">🎬 Vidéo</div>
+            </div>
+          </span>
+          <input type="file" id="msgImageInput" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="handleMsgImageSelect(event)">
+          <input type="file" id="msgVideoInput" accept="video/mp4,video/webm,video/quicktime" hidden onchange="handleMsgVideoSelect(event)">
           <input id="msgInput" placeholder="Écrivez votre message..." oninput="handleTypingInput()" onkeydown="if(event.key==='Enter') sendCurrentMessage()">
-          <button class="btn btn-primary btn-sm" onclick="sendCurrentMessage()">Envoyer</button>
+          <button class="btn btn-primary btn-sm" id="msgSendBtn" onclick="sendCurrentMessage()">Envoyer</button>
         </div>
       </div>
       <div class="chat-info">
@@ -101,46 +151,240 @@ function shellHTML(active, thread){
   </div>`;
 }
 
-/* Switch the open thread and re-render (Issue 8: conversations use real users) */
+/* Switch the open thread and re-render */
 async function openConversation(otherId){
   _activeOtherId = otherId || null;
   const active = _conversations.find(c => String(c.otherId) === String(otherId)) || _conversations[0];
   if (!active) return;
-  const thread = await api.getMessages(active.otherId);
+  let thread;
+  try {
+    thread = await api.getMessages(active.otherId);
+  } catch (err) {
+    showError(err);
+    return;
+  }
+  _indexMessages(thread);
   initLayout({ active:'messages', mainHTML: shellHTML(active, thread), noRail:true, wide:true });
-  /* Opening a thread means I've now read the other person's messages */
   await api.markMessagesRead(active.otherId);
   const c = _conversations.find(c => String(c.otherId) === String(active.otherId));
   if (c) c.unread = 0;
   _setupTypingChannel(active.otherId);
 }
 
-/* Calls, file attachments (Issues: 📞/🎥/📎 had no click handler and did
-   nothing — they now give honest feedback instead of looking broken). */
+/* Calls (Issues: 📞/🎥 had no click handler and did nothing — they now
+   give honest feedback instead of looking broken; real calling isn't
+   implemented). */
 function handleCallAction(kind){
   showToast(kind === 'video' ? "L'appel vidéo n'est pas encore disponible." : "L'appel audio n'est pas encore disponible.", 'info');
 }
-function handleAttachFile(){
-  showToast("L'envoi de fichiers dans les messages arrive bientôt.", 'info');
-}
 /* Toggle the "info" side panel — mainly useful on narrower screens
-   where CSS hides it by default (Issue: ℹ️ had no click handler). */
+   where CSS hides it by default. */
 function toggleChatInfo(){
   document.querySelector('.chat-info')?.classList.toggle('force-visible');
 }
 
+/* ── Start a new conversation (Issue fixed: DB.searchProfiles already
+   existed — its own source comment even says it's "for starting a new
+   conversation" — but nothing in the UI ever called it, so there was
+   no way to message someone you hadn't already exchanged a message
+   with). Opens a search modal; picking a result either jumps to the
+   existing thread or creates a local placeholder conversation that
+   becomes real the moment the first message is sent. ── */
+let _ncResults = [];
+let _ncSearchTimer = null;
+
+function openNewConversationModal(){
+  _ncResults = [];
+  openModal(`
+    <h3 style="margin:0 0 16px">Nouvelle conversation</h3>
+    <div class="field"><input id="ncSearchInput" placeholder="Rechercher par nom ou identifiant..." autocomplete="off" oninput="handleNcSearchInput()"></div>
+    <div id="ncResults" style="max-height:280px;overflow-y:auto"></div>`);
+  setTimeout(() => document.getElementById('ncSearchInput')?.focus(), 50);
+}
+function handleNcSearchInput(){
+  clearTimeout(_ncSearchTimer);
+  const q = document.getElementById('ncSearchInput')?.value || '';
+  _ncSearchTimer = setTimeout(() => _runNcSearch(q), 300);
+}
+async function _runNcSearch(q){
+  const resultsEl = document.getElementById('ncResults');
+  if (!resultsEl) return; // modal was closed while the timer was pending
+  if (!q.trim()) { resultsEl.innerHTML = ''; return; }
+  resultsEl.innerHTML = `<div class="row" style="padding:12px;color:var(--text-3);font-size:13px">Recherche...</div>`;
+  try {
+    const users = await api.searchPeople(q);
+    if (!document.getElementById('ncResults')) return;
+    _ncResults = users;
+    resultsEl.innerHTML = users.length ? users.map((u,i)=>`
+      <div class="row" style="padding:9px 4px;cursor:pointer" onclick="_selectNcUser(${i})">
+        <img class="avatar" src="${u.avatar_url || 'https://i.pravatar.cc/60?u='+u.id}" style="width:36px;height:36px">
+        <div><div class="row-title">${escapeHtml((u.first_name+' '+(u.last_name||'')).trim() || 'Utilisateur')}</div><div class="row-sub">${escapeHtml(u.handle||'')}</div></div>
+      </div>`).join('') : `<div class="row" style="padding:12px;color:var(--text-3);font-size:13px">Aucun résultat.</div>`;
+  } catch (err) {
+    if (resultsEl) resultsEl.innerHTML = `<div class="row" style="padding:12px;color:var(--red);font-size:13px">${escapeHtml(err.message || 'Erreur de recherche.')}</div>`;
+  }
+}
+function _selectNcUser(i){
+  const u = _ncResults[i];
+  if (!u) return;
+  closeModal();
+  startNewConversationWith(u);
+}
+async function startNewConversationWith(user){
+  const existing = _conversations.find(c => String(c.otherId) === String(user.id));
+  if (existing) { await openConversation(user.id); return; }
+  _conversations = [{
+    name: (user.first_name + ' ' + (user.last_name || '')).trim() || 'Utilisateur',
+    avatar: user.avatar_url || 'https://i.pravatar.cc/80?u=' + user.id,
+    preview: '', time: '', online: false, unread: 0,
+    otherId: user.id,
+  }, ..._conversations];
+  await openConversation(user.id);
+}
+
+/* Update just the sidebar preview/time locally after sending, instead
+   of a full reload. */
+function _refreshChatListPane(){
+  const listPane = document.getElementById('chatListPane');
+  if (listPane) {
+    listPane.innerHTML = `
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border-soft);display:flex;gap:8px;align-items:center">
+        <div class="search-box" style="max-width:none;flex:1"><span>🔍</span><input placeholder="Rechercher des messages..."></div>
+        <span class="icon-btn" title="Nouvelle conversation" onclick="openNewConversationModal()">✏️</span>
+      </div>
+      ${chatList()}`;
+  }
+}
+function _bumpConversationPreview(previewText){
+  const c = _conversations.find(c => String(c.otherId) === String(_activeOtherId));
+  if (c) { c.preview = previewText; c.time = 'à l\'instant'; }
+  _refreshChatListPane();
+}
+
+/* ── Send a text message (Issue fixed: the send button used to require
+   `_activeOtherId` to already be set, but on the mock fallback path it
+   was always null, so clicking "Envoyer" silently did nothing at all —
+   and any real failure was swallowed. api.sendMessage() now throws a
+   clear, visible error instead of pretending to succeed). ── */
 async function sendCurrentMessage(){
   const input = document.getElementById('msgInput');
   const text = input?.value.trim();
-  if (!text || !_activeOtherId) return;
-  input.value = '';
-  const body = document.getElementById('chatBody');
+  const errEl = document.getElementById('msgErr');
+  if (errEl) errEl.hidden = true;
+  if (!text) return;
+  if (!_activeOtherId) {
+    if (errEl) { errEl.textContent = 'Sélectionnez une conversation avant d\'écrire.'; errEl.hidden = false; }
+    return;
+  }
+  const btn = document.getElementById('msgSendBtn');
+  if (btn) btn.disabled = true;
   try {
     const sent = await api.sendMessage(_activeOtherId, text);
-    if (body) body.insertAdjacentHTML('beforeend', chatBubbles([{ id: sent?.id, from:'me', text, time:'à l\'instant', read:false }]));
-    body.scrollTop = body.scrollHeight;
+    input.value = '';
+    const msg = { id: sent?.id, from:'me', text, time:'à l\'instant', read:false };
+    if (msg.id) _messagesById[msg.id] = msg;
+    const body = document.getElementById('chatBody');
+    if (body) { body.insertAdjacentHTML('beforeend', chatBubbles([msg])); body.scrollTop = body.scrollHeight; }
+    _bumpConversationPreview(text);
   } catch (err) {
-    showError ? showError(err) : console.error(err);
+    if (errEl) { errEl.textContent = err.message || 'Impossible d\'envoyer ce message.'; errEl.hidden = false; }
+    else showError(err);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+/* ── Image/video attachments (Issue fixed: the 📎 button was a stub
+   that only showed "coming soon" — DB.uploadPostMedia already existed
+   and works fine for any Storage upload, it just was never wired up
+   here). Same validation pattern as create-post.html. ── */
+const MSG_MAX_IMAGE_MB = 8;
+const MSG_ALLOWED_IMAGE_TYPES = ['image/jpeg','image/png','image/webp','image/gif'];
+const MSG_MAX_VIDEO_MB = 50;
+const MSG_ALLOWED_VIDEO_TYPES = ['video/mp4','video/webm','video/quicktime'];
+
+async function _sendMessageWithMedia(imageUrl, videoUrl){
+  const sent = await api.sendMessage(_activeOtherId, '', imageUrl, videoUrl);
+  const msg = { id: sent?.id, from:'me', text:'', imageUrl, videoUrl, time:'à l\'instant', read:false };
+  if (msg.id) _messagesById[msg.id] = msg;
+  const body = document.getElementById('chatBody');
+  if (body) { body.insertAdjacentHTML('beforeend', chatBubbles([msg])); body.scrollTop = body.scrollHeight; }
+  _bumpConversationPreview(imageUrl ? '📷 Photo' : '🎬 Vidéo');
+}
+async function handleMsgImageSelect(evt){
+  const file = evt.target.files?.[0];
+  evt.target.value = '';
+  if (!file) return;
+  if (!_activeOtherId) { showToast('Sélectionnez une conversation avant d\'envoyer un fichier.', 'error'); return; }
+  if (!MSG_ALLOWED_IMAGE_TYPES.includes(file.type)) { showToast(`Format non supporté: ${file.name}. Utilisez JPG, PNG, WEBP ou GIF.`, 'error'); return; }
+  if (file.size > MSG_MAX_IMAGE_MB * 1024 * 1024) { showToast(`"${file.name}" dépasse la taille maximale de ${MSG_MAX_IMAGE_MB} Mo.`, 'error'); return; }
+  showToast('Envoi de l\'image...', 'info');
+  try {
+    const url = await api.uploadMessageMedia(file);
+    await _sendMessageWithMedia(url, null);
+  } catch (err) {
+    showError(err);
+  }
+}
+async function handleMsgVideoSelect(evt){
+  const file = evt.target.files?.[0];
+  evt.target.value = '';
+  if (!file) return;
+  if (!_activeOtherId) { showToast('Sélectionnez une conversation avant d\'envoyer un fichier.', 'error'); return; }
+  if (!MSG_ALLOWED_VIDEO_TYPES.includes(file.type)) { showToast(`Format non supporté: ${file.name}. Utilisez MP4, WEBM ou MOV.`, 'error'); return; }
+  if (file.size > MSG_MAX_VIDEO_MB * 1024 * 1024) { showToast(`"${file.name}" dépasse la taille maximale de ${MSG_MAX_VIDEO_MB} Mo.`, 'error'); return; }
+  showToast('Envoi de la vidéo...', 'info');
+  try {
+    const url = await api.uploadMessageMedia(file);
+    await _sendMessageWithMedia(null, url);
+  } catch (err) {
+    showError(err);
+  }
+}
+
+/* ── Edit / delete my own messages (previously entirely missing). ── */
+function openEditMessageModal(id){
+  document.getElementById('moremenu-msg-'+id)?.setAttribute('hidden','');
+  const m = _messagesById[id];
+  if (!m) return;
+  openModal(`
+    <h3 style="margin:0 0 16px">Modifier le message</h3>
+    <div class="field"><textarea id="editMsgText" rows="3">${escapeHtml(m.text||'')}</textarea></div>
+    <div id="editMsgErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" id="editMsgSubmit" onclick="submitEditMessage('${id}')">Enregistrer</button>
+    </div>`);
+}
+async function submitEditMessage(id){
+  const text = document.getElementById('editMsgText').value.trim();
+  const errEl = document.getElementById('editMsgErr');
+  if (!text) { errEl.textContent = 'Le message ne peut pas être vide.'; errEl.hidden = false; return; }
+  const btn = document.getElementById('editMsgSubmit');
+  btn.disabled = true; btn.textContent = 'Enregistrement...';
+  try {
+    await api.editMessage(id, text);
+    closeModal();
+    if (_messagesById[id]) { _messagesById[id].text = text; _messagesById[id].edited = true; }
+    const bubble = document.querySelector(`.bubble-wrap[data-msg-id="${id}"]`);
+    if (bubble) bubble.outerHTML = chatBubbles([_messagesById[id]]);
+    showToast('Message modifié ✓', 'success');
+  } catch (err) {
+    errEl.textContent = err.message || 'Impossible de modifier ce message.';
+    errEl.hidden = false;
+    btn.disabled = false; btn.textContent = 'Enregistrer';
+  }
+}
+async function handleDeleteMessage(id){
+  document.getElementById('moremenu-msg-'+id)?.setAttribute('hidden','');
+  if (!confirm('Supprimer définitivement ce message ?')) return;
+  try {
+    await api.deleteMessage(id);
+    document.querySelector(`.bubble-wrap[data-msg-id="${id}"]`)?.remove();
+    delete _messagesById[id];
+    showToast('Message supprimé ✓', 'success');
+  } catch (err) {
+    showError(err);
   }
 }
 
@@ -174,24 +418,19 @@ function handleTypingInput(){
    preview/unread badge updates without a manual reload. ── */
 async function _handleIncomingMessage(row){
   if (String(row.sender_id) === String(_activeOtherId)) {
+    const msg = { id: row.id, from:'them', text: row.content, imageUrl: row.image_url || null, videoUrl: row.video_url || null, time:'à l\'instant' };
+    _messagesById[msg.id] = msg;
     const body = document.getElementById('chatBody');
     if (body) {
-      body.insertAdjacentHTML('beforeend', chatBubbles([{ id: row.id, from:'them', text: row.content, time:'à l\'instant' }]));
+      body.insertAdjacentHTML('beforeend', chatBubbles([msg]));
       body.scrollTop = body.scrollHeight;
     }
     await api.markMessagesRead(_activeOtherId);
   } else {
     showToast('Nouveau message reçu', 'info');
   }
-  _conversations = await api.getConversations();
-  const listPane = document.getElementById('chatListPane');
-  if (listPane) {
-    listPane.innerHTML = `
-      <div style="padding:14px 16px;border-bottom:1px solid var(--border-soft)">
-        <div class="search-box" style="max-width:none"><span>🔍</span><input placeholder="Rechercher des messages..."></div>
-      </div>
-      ${chatList()}`;
-  }
+  try { _conversations = await api.getConversations(); } catch (err) { /* keep current list on transient errors */ }
+  _refreshChatListPane();
 }
 
 /* ── Read receipts: when the other person reads what I sent them,
@@ -204,27 +443,43 @@ function _handleReadReceipt(row){
   });
 }
 
+async function _setupRealtime(otherId){
+  if (typeof DB === 'undefined' || !DB.isConnected) return;
+  try {
+    const me = await DB.getCurrentUser();
+    _myUserId = me?.id || null;
+    if (!_myUserId) return;
+    _incomingChannel = DB.subscribeToIncomingMessages(_myUserId, (row) => { _handleIncomingMessage(row); });
+    _readChannel = DB.subscribeToReadReceipts(_myUserId, (row) => { _handleReadReceipt(row); });
+    if (otherId) _setupTypingChannel(otherId);
+  } catch (err) {
+    console.warn('[WorldHub] Realtime messaging setup failed:', err.message);
+  }
+}
+
 async function render(){
-  _conversations = await api.getConversations();
-  const active = _conversations[0] || { name:'', avatar:'', otherId:null };
+  try {
+    _conversations = await api.getConversations();
+  } catch (err) {
+    initLayout({ active:'messages', mainHTML: emptyStateHTML(err.message, '⚠️'), noRail:true, wide:true });
+    return;
+  }
+  if (!_conversations.length) {
+    initLayout({
+      active:'messages',
+      mainHTML: emptyStateHTML('Aucune conversation pour le moment. Recherchez quelqu\'un pour démarrer une discussion.', '💬', true),
+      noRail:true, wide:true,
+    });
+    await _setupRealtime(null);
+    return;
+  }
+  const active = _conversations[0];
   _activeOtherId = active.otherId ?? null;
   const thread = await api.getMessages(active.otherId);
+  _indexMessages(thread);
   initLayout({ active:'messages', mainHTML: shellHTML(active, thread), noRail:true, wide:true });
   if (active.otherId) await api.markMessagesRead(active.otherId);
-
-  if (typeof DB !== 'undefined' && DB.isConnected) {
-    try {
-      const me = await DB.getCurrentUser();
-      _myUserId = me?.id || null;
-      if (_myUserId) {
-        _incomingChannel = DB.subscribeToIncomingMessages(_myUserId, (row) => { _handleIncomingMessage(row); });
-        _readChannel = DB.subscribeToReadReceipts(_myUserId, (row) => { _handleReadReceipt(row); });
-        _setupTypingChannel(active.otherId);
-      }
-    } catch (err) {
-      console.warn('[WorldHub] Realtime messaging setup failed:', err.message);
-    }
-  }
+  await _setupRealtime(active.otherId);
 }
 render();
 
@@ -239,14 +494,20 @@ window.addEventListener('beforeunload', () => {
 /* Ces fonctions sont appelées depuis des attributs onclick/onkeydown
    inline dans le HTML généré ci-dessus, qui s'exécutent dans le scope
    global — invisibles depuis l'extérieur de cette IIFE tant qu'on ne
-   les expose pas explicitement sur window (même bug que sur
-   profile.html : "openConversation is not defined", etc). */
+   les expose pas explicitement sur window. */
 window.openConversation = openConversation;
 window.handleCallAction = handleCallAction;
-window.handleAttachFile = handleAttachFile;
 window.toggleChatInfo = toggleChatInfo;
 window.sendCurrentMessage = sendCurrentMessage;
 window.handleTypingInput = handleTypingInput;
+window.handleMsgImageSelect = handleMsgImageSelect;
+window.handleMsgVideoSelect = handleMsgVideoSelect;
+window.openEditMessageModal = openEditMessageModal;
+window.submitEditMessage = submitEditMessage;
+window.handleDeleteMessage = handleDeleteMessage;
+window.openNewConversationModal = openNewConversationModal;
+window.handleNcSearchInput = handleNcSearchInput;
+window._selectNcUser = _selectNcUser;
 
 })();
 </script>
