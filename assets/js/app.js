@@ -992,6 +992,13 @@ const api = {
             avatar:    profile.avatar_url || MOCK.user.avatar,
             cover:     profile.cover_url  || null,
             bio:       profile.bio        || MOCK.user.bio,
+            /* Issue: la page profil affichait "📍 Paris, France · 🔗 alexdev.io"
+               en dur pour tout le monde. On lit les vraies colonnes si elles
+               existent, sinon on n'affiche rien plutôt que d'inventer une
+               localisation/site qui n'appartient pas à l'utilisateur. */
+            location:  profile.location || '',
+            website:   profile.website  || '',
+            joinedAt:  profile.created_at || user.created_at || null,
             followers: counts.followers,
             following: counts.following,
             posts:     MOCK.user.posts, /* post count requires separate query — extendable */
@@ -1001,7 +1008,90 @@ const api = {
         console.warn('[WorldHub] getCurrentProfile fell back to mock:', err.message);
       }
     }
-    return { ...MOCK.user, id: null };
+    return { ...MOCK.user, id: null, location:'', website:'', joinedAt:null };
+  },
+
+  /* ── Username availability (Issue: aucune vérification n'existait,
+     ni à l'inscription ni à l'édition du profil — seule la contrainte
+     de base de données bloquait après coup, avec un message illisible). ── */
+  async checkUsernameAvailable(handle, currentUserId = null) {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      return DB.checkHandleAvailable(handle, currentUserId);
+    }
+    /* Mode démo (sans backend) : on simule juste deux noms "déjà pris"
+       pour que l'indicateur visuel ait quelque chose à montrer. */
+    const taken = ['admin', 'worldhub', 'test', 'alexdev'];
+    return !taken.includes(String(handle).replace(/^@/, '').toLowerCase());
+  },
+
+  /* ── Followers / Following list (Issue: seuls les compteurs étaient
+     affichés sur le profil, aucune page ne listait qui suit qui). ── */
+  async _hydrateConnectionRows(rows) {
+    const mapped = rows.map(p => ({
+      id: p.id,
+      name: (p.first_name + ' ' + (p.last_name || '')).trim() || 'Utilisateur',
+      handle: p.handle || '@user',
+      avatar: p.avatar_url || ('https://i.pravatar.cc/80?u=' + p.id),
+      isFollowing: false,
+      isMe: false,
+    }));
+    if (typeof DB === 'undefined' || !DB.isConnected) return mapped;
+    try {
+      const me = await DB.getCurrentUser();
+      if (!me) return mapped;
+      const followingIds = await DB.listFollowingIds(me.id);
+      return mapped.map(r => ({ ...r, isFollowing: followingIds.has(r.id), isMe: r.id === me.id }));
+    } catch (err) {
+      console.warn('[WorldHub] _hydrateConnectionRows:', err.message);
+      return mapped;
+    }
+  },
+  async getFollowers(userId) {
+    if (typeof DB !== 'undefined' && DB.isConnected && userId) {
+      try {
+        const rows = await DB.listFollowers(userId);
+        return this._hydrateConnectionRows(rows);
+      } catch (err) {
+        console.warn('[WorldHub] getFollowers fell back to mock:', err.message);
+      }
+    }
+    return MOCK.topMembers.map((m, i) => ({
+      id: 'mock-' + i, name: m.name, handle: '@' + m.name.toLowerCase().replace(' ', '.'),
+      avatar: m.avatar, isFollowing: false, isMe: false,
+    }));
+  },
+  async getFollowing(userId) {
+    if (typeof DB !== 'undefined' && DB.isConnected && userId) {
+      try {
+        const rows = await DB.listFollowing(userId);
+        return this._hydrateConnectionRows(rows);
+      } catch (err) {
+        console.warn('[WorldHub] getFollowing fell back to mock:', err.message);
+      }
+    }
+    return MOCK.topMembers.slice(0, 2).map((m, i) => ({
+      id: 'mock-' + i, name: m.name, handle: '@' + m.name.toLowerCase().replace(' ', '.'),
+      avatar: m.avatar, isFollowing: true, isMe: false,
+    }));
+  },
+  async getProfileById(userId) {
+    if (typeof DB !== 'undefined' && DB.isConnected && userId) {
+      try {
+        const profile = await DB.getProfile(userId);
+        const counts  = await DB.getFollowCounts(userId);
+        return {
+          id: userId,
+          name: (profile.first_name + ' ' + (profile.last_name || '')).trim(),
+          handle: profile.handle || '@user',
+          avatar: profile.avatar_url || ('https://i.pravatar.cc/150?u=' + userId),
+          followers: counts.followers,
+          following: counts.following,
+        };
+      } catch (err) {
+        console.warn('[WorldHub] getProfileById:', err.message);
+      }
+    }
+    return null;
   },
 
   /* ── Profile photo uploads (Issues 7/8) ──

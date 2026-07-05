@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorldHub — Abonnés</title>
+<link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div id="topbar-slot"></div>
+<div id="shell-slot"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/supabase.js"></script>
+<script src="assets/js/auth-guard.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+(async function() {
+  const _session = await requireAuth();
+  if (!_session) return;
+
+/* ?id=<userId> — profil dont on regarde les relations (par défaut :
+   la personne connectée). ?tab=followers|following — onglet ouvert. */
+const params = new URLSearchParams(location.search);
+let _targetId = params.get('id') || null;
+let _activeTab = params.get('tab') === 'following' ? 'following' : 'followers';
+let _targetName = 'Vous';
+
+function connectionRow(u){
+  const btn = u.isMe ? '' : `
+    <button class="btn btn-sm ${u.isFollowing ? 'btn-outline' : 'btn-primary'}"
+      data-follow="${u.isFollowing ? 'on' : 'off'}" data-user-id="${u.id ?? ''}">
+      ${u.isFollowing ? 'Suivi ✓' : 'Suivre'}
+    </button>`;
+  return `
+  <div class="row">
+    <img class="avatar" src="${u.avatar}" style="width:44px;height:44px">
+    <div style="flex:1;min-width:0">
+      <div class="row-title">${escapeHtml(u.name)}${u.isMe ? ' <span style="color:var(--text-3);font-weight:400">(vous)</span>' : ''}</div>
+      <div class="row-sub">${escapeHtml(u.handle)}</div>
+    </div>
+    ${btn}
+  </div>`;
+}
+
+function mainConnections(list){
+  return `
+  <div class="main-col">
+    <div class="card">
+      <div class="card-head"><h3>${escapeHtml(_targetName)} — Relations</h3></div>
+      <div class="tabs">
+        <div class="tab ${_activeTab==='followers'?'active':''}" onclick="switchTab('followers')">Abonnés</div>
+        <div class="tab ${_activeTab==='following'?'active':''}" onclick="switchTab('following')">Abonnements</div>
+      </div>
+      <div id="connectionsList">
+        ${list.length ? list.map(connectionRow).join('') : `<div class="row" style="justify-content:center;color:var(--text-3);padding:24px">Aucun résultat pour le moment.</div>`}
+      </div>
+    </div>
+  </div>`;
+}
+
+async function loadList(){
+  const fn = _activeTab === 'following' ? api.getFollowing : api.getFollowers;
+  return fn(_targetId);
+}
+
+async function switchTab(tab){
+  _activeTab = tab;
+  const url = new URL(location.href);
+  url.searchParams.set('tab', tab);
+  history.replaceState(null, '', url);
+  const list = await loadList();
+  initLayout({ active:'profile', mainHTML: mainConnections(list), noRail:true });
+}
+
+async function render(){
+  if (!_targetId) {
+    const me = await api.getCurrentProfile();
+    _targetId = me.id;
+    _targetName = 'Vous';
+  } else {
+    const p = await api.getProfileById(_targetId);
+    _targetName = p ? p.name : 'Utilisateur';
+  }
+  const list = await loadList();
+  initLayout({ active:'profile', mainHTML: mainConnections(list), noRail:true });
+}
+window.switchTab = switchTab;
+render();
+
+})();
+</script>
+</body>
+</html>

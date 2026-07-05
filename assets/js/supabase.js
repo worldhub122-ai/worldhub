@@ -26,15 +26,40 @@ const DB = (() => {
   }
 
   // ---------------- Auth ----------------
-  async function signUp({ email, password, firstName, lastName, worldId }){
+  // `handle` est maintenant choisi par l'utilisateur (Issue: le nom
+  // d'utilisateur était auto-généré aléatoirement, sans moyen de le
+  // choisir à l'inscription). On revérifie sa disponibilité juste avant
+  // l'inscription (en plus de la vérification "live" côté formulaire) ;
+  // le filet de sécurité final reste la contrainte unique en base,
+  // interceptée avec un message clair dans updateProfile() ci-dessous.
+  async function signUp({ email, password, firstName, lastName, worldId, handle }){
     assertConnected();
-    const handle = '@' + (firstName || 'user').toLowerCase().replace(/\s+/g,'') + Math.floor(Math.random()*1000);
+    const normalizedHandle = handle
+      ? '@' + String(handle).replace(/^@/, '').trim().toLowerCase()
+      : '@' + (firstName || 'user').toLowerCase().replace(/\s+/g,'') + Math.floor(Math.random()*1000);
+    if (handle) {
+      const available = await checkHandleAvailable(normalizedHandle);
+      if (!available) throw new Error('Ce nom d\'utilisateur est déjà pris. Choisissez-en un autre.');
+    }
     const { data, error } = await sbClient.auth.signUp({
       email, password,
-      options: { data: { first_name:firstName, last_name:lastName, handle, world_id: worldId } }
+      options: { data: { first_name:firstName, last_name:lastName, handle:normalizedHandle, world_id: worldId } }
     });
     if(error) throw error;
     return data;
+  }
+
+  // Vérifie si un @nom_utilisateur est libre. `excludeUserId` permet
+  // d'ignorer le propriétaire actuel du nom lors d'une modification de
+  // profil (sinon on se ferait bloquer par... son propre nom actuel).
+  async function checkHandleAvailable(handle, excludeUserId = null){
+    assertConnected();
+    const normalized = '@' + String(handle).replace(/^@/, '').trim().toLowerCase();
+    let q = sbClient.from('profiles').select('id', { count:'exact', head:true }).eq('handle', normalized);
+    if (excludeUserId) q = q.neq('id', excludeUserId);
+    const { count, error } = await q;
+    if (error) throw error;
+    return (count || 0) === 0;
   }
 
   async function signIn({ email, password }){
@@ -85,8 +110,19 @@ const DB = (() => {
 
   async function updateProfile(userId, patch){
     assertConnected();
+    if (patch.handle) {
+      patch.handle = '@' + String(patch.handle).replace(/^@/, '').trim().toLowerCase();
+    }
     const { data, error } = await sbClient.from('profiles').update(patch).eq('id', userId).select().single();
-    if(error) throw error;
+    if(error){
+      /* Postgres unique_violation (23505) — traduit en message clair au
+         lieu de laisser remonter l'erreur brute de la base (Issue:
+         aucune prévention des noms d'utilisateur en double). */
+      if (error.code === '23505' || /duplicate key|already exists/i.test(error.message || '')) {
+        throw new Error('Ce nom d\'utilisateur est déjà pris. Choisissez-en un autre.');
+      }
+      throw error;
+    }
     return data;
   }
 
@@ -425,6 +461,37 @@ const DB = (() => {
       await sbClient.from('followers').insert({ follower_id:user.id, following_id:targetUserId });
       return true;
     }
+  }
+
+  // Page "Abonnés / Abonnements" (Issue: aucune page ne listait les
+  // relations de suivi — seuls les compteurs étaient affichés).
+  async function listFollowers(userId){
+    assertConnected();
+    const { data, error } = await sbClient
+      .from('followers')
+      .select('follower:profiles!followers_follower_id_fkey(id, first_name, last_name, handle, avatar_url)')
+      .eq('following_id', userId);
+    if (error) throw error;
+    return (data || []).map(r => r.follower).filter(Boolean);
+  }
+
+  async function listFollowing(userId){
+    assertConnected();
+    const { data, error } = await sbClient
+      .from('followers')
+      .select('following:profiles!followers_following_id_fkey(id, first_name, last_name, handle, avatar_url)')
+      .eq('follower_id', userId);
+    if (error) throw error;
+    return (data || []).map(r => r.following).filter(Boolean);
+  }
+
+  // Utilisé pour savoir, dans une liste d'utilisateurs quelconque, lesquels
+  // sont déjà suivis par la personne connectée (état correct des boutons).
+  async function listFollowingIds(userId){
+    assertConnected();
+    const { data, error } = await sbClient.from('followers').select('following_id').eq('follower_id', userId);
+    if (error) throw error;
+    return new Set((data || []).map(r => r.following_id));
   }
 
   // ---------------- Messages (رسائل مباشرة) ----------------
@@ -873,6 +940,7 @@ const DB = (() => {
     isConnected, sbClient,
     signUp, signIn, signOut, signInWithOAuth, getSession, getCurrentUser,
     getProfile, updateProfile, getFollowCounts, uploadAvatar, uploadCover,
+    checkHandleAvailable, listFollowers, listFollowing, listFollowingIds,
     listPosts, createPost, updatePost, deletePost, uploadPostMedia,
     toggleRepost, quoteRepost, getRepostStats,
     toggleLike, addComment, toggleFollow,

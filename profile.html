@@ -50,6 +50,21 @@ function _photoEditBtn(inputId, extraStyle){
     style="position:absolute;background:rgba(15,15,20,.65);border:1px solid var(--border-soft);${extraStyle}">📷</button>`;
 }
 
+/* Builds "· 📍 lieu · 🔗 site · Rejoint en ..." only from fields that
+   actually exist on the profile (Issue: ce texte était codé en dur
+   ("Paris, France" / "alexdev.io") pour tout le monde, sans lien avec
+   les vraies données ni possibilité de le changer). */
+function _profileMetaLineHTML(){
+  const parts = [];
+  if (MOCK.user.location) parts.push('📍 ' + escapeHtml(MOCK.user.location));
+  if (MOCK.user.website) parts.push('🔗 ' + escapeHtml(MOCK.user.website));
+  if (MOCK.user.joinedAt) {
+    const d = new Date(MOCK.user.joinedAt);
+    if (!isNaN(d)) parts.push('Rejoint en ' + d.toLocaleDateString('fr-FR', { month:'long', year:'numeric' }));
+  }
+  return parts.length ? ' · ' + parts.join(' · ') : '';
+}
+
 function mainProfile(){
   const coverStyle = MOCK.user.cover
     ? `background:center/cover no-repeat url('${MOCK.user.cover}')`
@@ -76,11 +91,11 @@ function mainProfile(){
           </div>
           <button class="btn btn-primary" onclick="openEditProfileModal()">Modifier le profil</button>
         </div>
-        <p style="color:var(--text-2);font-size:14px;margin:16px 0">${escapeHtml(MOCK.user.bio)} · 📍 Paris, France · 🔗 alexdev.io · Rejoint en janvier 2024</p>
+        <p style="color:var(--text-2);font-size:14px;margin:16px 0">${escapeHtml(MOCK.user.bio)}${_profileMetaLineHTML()}</p>
         <div style="display:flex;gap:26px;font-size:13.5px">
           <div><b>${MOCK.user.posts}</b> <span style="color:var(--text-3)">Publications</span></div>
-          <div><b>${MOCK.user.followers}</b> <span style="color:var(--text-3)">Abonnés</span></div>
-          <div><b>${MOCK.user.following}</b> <span style="color:var(--text-3)">Abonnements</span></div>
+          <div style="cursor:pointer" onclick="location.href='connections.html?tab=followers'"><b>${MOCK.user.followers}</b> <span style="color:var(--text-3)">Abonnés</span></div>
+          <div style="cursor:pointer" onclick="location.href='connections.html?tab=following'"><b>${MOCK.user.following}</b> <span style="color:var(--text-3)">Abonnements</span></div>
         </div>
       </div>
       <div class="tabs">
@@ -170,36 +185,111 @@ async function switchProfileTab(tabEl, tab){
 }
 
 /* Edit-profile modal (Issue: "Modifier le profil" had no onclick). */
+/* Username field inside the edit modal: same live format+availability
+   check as the signup form (Issue: on pouvait changer son nom
+   d'utilisateur pour un nom déjà pris sans le savoir avant de valider). */
+const HANDLE_RE = /^[a-zA-Z0-9_]{3,20}$/;
+let _epHandleValid = true; // true tant qu'on n'a pas touché au champ (valeur actuelle déjà valide)
+let _epHandleTimer = null;
+let _epHandleToken = 0;
+
+function _setEpHandleUI(state, message){
+  const status = document.getElementById('epHandleStatus');
+  const hint = document.getElementById('epHandleHint');
+  const input = document.getElementById('epHandle');
+  if (!status || !hint || !input) return;
+  const styles = {
+    checking: { icon:'…', color:'var(--text-3)' },
+    ok:       { icon:'✓', color:'var(--green)' },
+    taken:    { icon:'✕', color:'var(--red)' },
+    invalid:  { icon:'',  color:'var(--text-3)' },
+  }[state] || { icon:'', color:'var(--text-3)' };
+  status.textContent = styles.icon;
+  status.style.color = styles.color;
+  hint.textContent = message;
+  hint.style.color = state === 'taken' ? 'var(--red)' : 'var(--text-3)';
+  input.style.borderColor = state === 'ok' ? 'var(--green)' : (state === 'taken' ? 'var(--red)' : '');
+}
+
+function handleEpHandleInput(currentHandle){
+  const raw = document.getElementById('epHandle').value.trim().replace(/^@/,'');
+  clearTimeout(_epHandleTimer);
+  if (raw.toLowerCase() === currentHandle.toLowerCase()){
+    _epHandleValid = true;
+    _setEpHandleUI('invalid', "3 à 20 caractères : lettres, chiffres, underscore.");
+    return;
+  }
+  _epHandleValid = false;
+  if (!raw || !HANDLE_RE.test(raw)){
+    _setEpHandleUI('invalid', "Format invalide : lettres, chiffres et underscore uniquement (3-20 caractères).");
+    return;
+  }
+  _setEpHandleUI('checking', 'Vérification de la disponibilité...');
+  const token = ++_epHandleToken;
+  _epHandleTimer = setTimeout(async () => {
+    try {
+      const available = await api.checkUsernameAvailable(raw);
+      if (token !== _epHandleToken) return;
+      if (available){ _epHandleValid = true; _setEpHandleUI('ok', 'Nom d\'utilisateur disponible ✓'); }
+      else { _setEpHandleUI('taken', 'Ce nom d\'utilisateur est déjà pris.'); }
+    } catch (err) {
+      if (token !== _epHandleToken) return;
+      _setEpHandleUI('invalid', 'Impossible de vérifier pour le moment.');
+    }
+  }, 450);
+}
+
 function openEditProfileModal(){
   const parts = (MOCK.user.name || '').split(' ');
   const firstName = parts[0] || '';
   const lastName = parts.slice(1).join(' ');
+  const currentHandle = (MOCK.user.handle||'').replace(/^@/,'');
+  _epHandleValid = true;
   openModal(`
     <h3 style="margin:0 0 16px">Modifier le profil</h3>
     <div class="field"><label>Prénom</label><input id="epFirst" value="${escapeHtml(firstName)}"></div>
     <div class="field"><label>Nom</label><input id="epLast" value="${escapeHtml(lastName)}"></div>
-    <div class="field"><label>Nom d'utilisateur</label><input id="epHandle" value="${escapeHtml((MOCK.user.handle||'').replace(/^@/,''))}"></div>
+    <div class="field">
+      <label>Nom d'utilisateur</label>
+      <div style="position:relative">
+        <input id="epHandle" value="${escapeHtml(currentHandle)}" oninput="handleEpHandleInput('${escapeHtml(currentHandle)}')" style="padding-right:34px">
+        <span id="epHandleStatus" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:14px"></span>
+      </div>
+      <div id="epHandleHint" style="font-size:11.5px;color:var(--text-3);margin-top:4px">3 à 20 caractères : lettres, chiffres, underscore.</div>
+    </div>
     <div class="field"><label>Bio</label><textarea id="epBio" rows="3">${escapeHtml(MOCK.user.bio||'')}</textarea></div>
+    <div class="field"><label>Localisation</label><input id="epLocation" value="${escapeHtml(MOCK.user.location||'')}" placeholder="ex: Paris, France"></div>
+    <div class="field"><label>Site web</label><input id="epWebsite" value="${escapeHtml(MOCK.user.website||'')}" placeholder="ex: monsite.io"></div>
     <div id="epErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
     <div style="display:flex;gap:10px;justify-content:flex-end">
       <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
-      <button class="btn btn-primary" id="epSubmit" onclick="submitEditProfile()">Enregistrer</button>
+      <button class="btn btn-primary" id="epSubmit" onclick="submitEditProfile('${escapeHtml(currentHandle)}')">Enregistrer</button>
     </div>`);
 }
-async function submitEditProfile(){
+async function submitEditProfile(currentHandle){
   const first_name = document.getElementById('epFirst').value.trim();
   const last_name = document.getElementById('epLast').value.trim();
   const handleRaw = document.getElementById('epHandle').value.trim().replace(/^@/,'');
   const bio = document.getElementById('epBio').value.trim();
+  const location = document.getElementById('epLocation').value.trim();
+  const website = document.getElementById('epWebsite').value.trim();
   const errEl = document.getElementById('epErr');
   if (!first_name){ errEl.textContent = 'Le prénom est requis.'; errEl.hidden = false; return; }
+  if (!handleRaw || !HANDLE_RE.test(handleRaw)){ errEl.textContent = "Le nom d'utilisateur doit contenir 3 à 20 lettres, chiffres ou underscores."; errEl.hidden = false; return; }
+  if (!_epHandleValid){ errEl.textContent = "Merci de choisir un nom d'utilisateur disponible avant d'enregistrer."; errEl.hidden = false; return; }
   const btn = document.getElementById('epSubmit');
   btn.disabled = true; btn.textContent = 'Enregistrement...';
   try {
-    await api.updateProfile({ first_name, last_name, handle: '@' + handleRaw, bio });
+    /* Filet de sécurité final si le nom a été pris par quelqu'un d'autre
+       entre la vérification "live" et la validation du formulaire —
+       updateProfile() dans supabase.js traduit déjà l'erreur de la base
+       en message clair si ce cas se produit. */
+    await api.updateProfile({ first_name, last_name, handle: '@' + handleRaw, bio, location, website });
     MOCK.user.name = (first_name + ' ' + last_name).trim();
     MOCK.user.handle = '@' + handleRaw;
     MOCK.user.bio = bio;
+    MOCK.user.location = location;
+    MOCK.user.website = website;
     closeModal();
     showToast('Profil mis à jour ✓', 'success');
     initLayout({ active:'profile', mainHTML: mainProfile(), rail: profileRail() });
@@ -255,6 +345,9 @@ async function handleCoverSelect(evt){
   MOCK.user.avatar    = p.avatar;
   MOCK.user.cover     = p.cover || null;
   MOCK.user.bio       = p.bio;
+  MOCK.user.location  = p.location || '';
+  MOCK.user.website   = p.website || '';
+  MOCK.user.joinedAt  = p.joinedAt || null;
   MOCK.user.followers = typeof p.followers === 'number' ? p.followers.toLocaleString('fr') : p.followers;
   MOCK.user.following = typeof p.following === 'number' ? p.following.toLocaleString('fr') : p.following;
   _myPosts = p.id ? await api.getUserPosts(p.id) : [];

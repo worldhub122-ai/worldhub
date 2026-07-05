@@ -182,6 +182,15 @@
         </div>
       </div>
       <div class="field">
+        <label>Nom d'utilisateur</label>
+        <div style="position:relative">
+          <input type="text" id="regHandle" placeholder="alex_dev" autocomplete="off" maxlength="20"
+                 oninput="handleHandleInput()" style="padding-right:34px">
+          <span id="regHandleStatus" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:14px"></span>
+        </div>
+        <div id="regHandleHint" style="font-size:11.5px;color:var(--text-3);margin-top:4px">3 à 20 caractères : lettres, chiffres, underscore.</div>
+      </div>
+      <div class="field">
         <label>Email</label>
         <input type="email" id="regEmail" placeholder="vous@exemple.com" autocomplete="email">
       </div>
@@ -268,6 +277,64 @@ function switchTab(name) {
   if (name === 'reset') document.getElementById('tabSignin').classList.add('active');
 }
 
+/* ── Username field: format validation + live availability check ──
+   (Issue: le nom d'utilisateur était généré au hasard, sans que la
+   personne puisse le choisir ni savoir s'il est déjà pris.) */
+const HANDLE_RE = /^[a-zA-Z0-9_]{3,20}$/;
+let _handleValid = false;
+let _handleCheckTimer = null;
+let _handleCheckToken = 0;
+
+function _setHandleUI(state, message) {
+  const status = document.getElementById('regHandleStatus');
+  const hint   = document.getElementById('regHandleHint');
+  const input  = document.getElementById('regHandle');
+  const styles = {
+    checking: { icon: '…', color: 'var(--text-3)' },
+    ok:       { icon: '✓', color: 'var(--green)' },
+    taken:    { icon: '✕', color: 'var(--red)' },
+    invalid:  { icon: '',  color: 'var(--text-3)' },
+  }[state] || { icon: '', color: 'var(--text-3)' };
+  status.textContent = styles.icon;
+  status.style.color = styles.color;
+  hint.textContent = message;
+  hint.style.color = state === 'taken' ? 'var(--red)' : 'var(--text-3)';
+  input.style.borderColor = state === 'ok' ? 'var(--green)' : (state === 'taken' ? 'var(--red)' : '');
+}
+
+function handleHandleInput() {
+  const raw = document.getElementById('regHandle').value.trim().replace(/^@/, '');
+  _handleValid = false;
+  clearTimeout(_handleCheckTimer);
+  if (!raw) {
+    _setHandleUI('invalid', "3 à 20 caractères : lettres, chiffres, underscore.");
+    return;
+  }
+  if (!HANDLE_RE.test(raw)) {
+    _setHandleUI('invalid', "Format invalide : lettres, chiffres et underscore uniquement (3-20 caractères).");
+    return;
+  }
+  _setHandleUI('checking', 'Vérification de la disponibilité...');
+  const token = ++_handleCheckToken;
+  _handleCheckTimer = setTimeout(async () => {
+    try {
+      const available = (typeof DB !== 'undefined' && DB.isConnected)
+        ? await DB.checkHandleAvailable(raw)
+        : true; /* mode démo sans backend : on ne bloque pas l'inscription */
+      if (token !== _handleCheckToken) return; /* une saisie plus récente a pris le relais */
+      if (available) {
+        _handleValid = true;
+        _setHandleUI('ok', 'Nom d\'utilisateur disponible ✓');
+      } else {
+        _setHandleUI('taken', 'Ce nom d\'utilisateur est déjà pris.');
+      }
+    } catch (err) {
+      if (token !== _handleCheckToken) return;
+      _setHandleUI('invalid', 'Impossible de vérifier pour le moment.');
+    }
+  }, 450);
+}
+
 /* ── World selector ── */
 let selectedWorld = 'programming';
 function selectWorld(el) {
@@ -328,11 +395,20 @@ async function handleRegister() {
   setErr('registerErr', '');
   const firstName = document.getElementById('regFirst').value.trim();
   const lastName  = document.getElementById('regLast').value.trim();
+  const handle    = document.getElementById('regHandle').value.trim().replace(/^@/, '');
   const email     = document.getElementById('regEmail').value.trim();
   const password  = document.getElementById('regPass').value;
 
-  if (!firstName || !lastName || !email || !password) {
+  if (!firstName || !lastName || !handle || !email || !password) {
     setErr('registerErr', 'Veuillez remplir tous les champs.');
+    return;
+  }
+  if (!HANDLE_RE.test(handle)) {
+    setErr('registerErr', "Le nom d'utilisateur doit contenir 3 à 20 lettres, chiffres ou underscores.");
+    return;
+  }
+  if (!_handleValid) {
+    setErr('registerErr', "Merci de choisir un nom d'utilisateur disponible avant de continuer.");
     return;
   }
   if (password.length < 8) {
@@ -342,7 +418,7 @@ async function handleRegister() {
 
   setLoading('btnRegister', true);
   try {
-    await DB.signUp({ email, password, firstName, lastName, worldId: selectedWorld });
+    await DB.signUp({ email, password, firstName, lastName, handle, worldId: selectedWorld });
     /* Supabase sends a confirmation email by default.
        If you have email confirmation disabled, signUp resolves with a session
        and we can redirect immediately. */
