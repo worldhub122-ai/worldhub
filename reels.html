@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorldHub — Reels</title>
+<link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div id="topbar-slot"></div>
+<div id="shell-slot"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/supabase.js"></script>
+<script src="assets/js/auth-guard.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+/* ==========================================================
+   WorldHub — reels.html
+   Issue: le bouton "🎬 Reels" de la sidebar pointait vers "#" —
+   il n'existait ni page, ni table, ni stockage, ni interaction
+   (lecture, publication, j'aime, commentaire, partage, sauvegarde).
+   Cette page ajoute un vrai flux vertical façon Reels/TikTok, basé
+   sur schema_reels.sql + les fonctions DB.*Reel* de supabase.js.
+   ========================================================== */
+
+let _reelsMuted = true;
+const _viewedReelIds = new Set();
+
+function reelItemHTML(r){
+  return `
+  <div class="reel-item" data-reel-id="${r.id}">
+    <video src="${r.videoUrl}" ${r.thumbnailUrl ? `poster="${r.thumbnailUrl}"` : ''}
+      loop muted playsinline preload="metadata" onclick="toggleReelPlay(this)"></video>
+    <div class="reel-progress"><div class="reel-progress-bar"></div></div>
+    <div class="reel-mute-btn" onclick="toggleReelMute(event)">🔇</div>
+    <div class="reel-overlay">
+      <div class="reel-info">
+        <div class="reel-author">
+          <img class="avatar" src="${r.avatarUrl || 'https://i.pravatar.cc/80?u=' + encodeURIComponent(r.handle)}" style="width:34px;height:34px">
+          <span>${escapeHtml(r.author)}</span>
+          <span style="font-weight:400;color:#d8d5e8;font-size:12px">${escapeHtml(r.handle)}</span>
+        </div>
+        <div class="reel-caption">${renderPostText(r.caption)}</div>
+      </div>
+    </div>
+    <div class="reel-actions">
+      <div class="reel-action-btn" onclick="handleReelLike(this,'${r.id}')">
+        <span class="ic">🤍</span><span class="count">${r.likes}</span>
+      </div>
+      <div class="reel-action-btn" onclick="openReelComments('${r.id}')">
+        <span class="ic">💬</span><span class="count">${r.comments}</span>
+      </div>
+      <div class="reel-action-btn" onclick="handleReelSave(this,'${r.id}')">
+        <span class="ic">🔖</span><span>Sauver</span>
+      </div>
+      <div class="reel-action-btn" onclick="handleReelShare('${r.id}')">
+        <span class="ic">🔗</span><span>Partager</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ── Play only the reel that's mostly in view; pause the rest.
+   Logs a view (once per reel per page load) the first time it starts
+   playing, and keeps the top progress bar in sync via timeupdate. ── */
+function initReelObserver(){
+  const videos = document.querySelectorAll('.reel-item video');
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      const video = entry.target;
+      if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+        video.muted = _reelsMuted;
+        video.play().catch(() => {});
+        const reelId = video.closest('.reel-item')?.dataset.reelId;
+        if (reelId && !_viewedReelIds.has(reelId)) {
+          _viewedReelIds.add(reelId);
+          api.logReelView(reelId);
+        }
+      } else {
+        video.pause();
+      }
+    });
+  }, { threshold: [0, 0.6, 1] });
+  videos.forEach(v => {
+    io.observe(v);
+    v.addEventListener('timeupdate', () => _updateReelProgress(v));
+  });
+}
+function _updateReelProgress(video){
+  const bar = video.closest('.reel-item')?.querySelector('.reel-progress-bar');
+  if (!bar) return;
+  bar.style.width = (video.duration ? (video.currentTime / video.duration) * 100 : 0) + '%';
+}
+function toggleReelPlay(video){
+  if (video.paused) video.play().catch(() => {}); else video.pause();
+}
+function toggleReelMute(evt){
+  evt.stopPropagation();
+  _reelsMuted = !_reelsMuted;
+  document.querySelectorAll('.reel-item video').forEach(v => { v.muted = _reelsMuted; });
+  document.querySelectorAll('.reel-mute-btn').forEach(b => { b.textContent = _reelsMuted ? '🔇' : '🔊'; });
+}
+
+/* ── Like (optimistic, rolled back on failure — same pattern as the
+   post like button in app.js's wireGlobalInteractions) ── */
+async function handleReelLike(btn, reelId){
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    const session = await DB.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+  }
+  if (btn.dataset.busy) return;
+  btn.dataset.busy = '1';
+  const wasLiked = btn.classList.contains('liked');
+  const iconEl = btn.querySelector('.ic');
+  const countEl = btn.querySelector('.count');
+  btn.classList.toggle('liked');
+  iconEl.textContent = wasLiked ? '🤍' : '❤️';
+  if (countEl) {
+    let n = parseInt(countEl.textContent.replace(/\D/g, '')) || 0;
+    countEl.textContent = n + (wasLiked ? -1 : 1);
+  }
+  try {
+    await api.toggleReelLike(reelId);
+  } catch (err) {
+    btn.classList.toggle('liked', wasLiked);
+    iconEl.textContent = wasLiked ? '❤️' : '🤍';
+    if (countEl) {
+      let n = parseInt(countEl.textContent.replace(/\D/g, '')) || 0;
+      countEl.textContent = n + (wasLiked ? 1 : -1);
+    }
+    showError(err);
+  } finally {
+    delete btn.dataset.busy;
+  }
+}
+
+/* ── Save / unsave ── */
+async function handleReelSave(btn, reelId){
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    const session = await DB.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+  }
+  if (btn.dataset.busy) return;
+  btn.dataset.busy = '1';
+  const wasSaved = btn.classList.contains('saved');
+  const iconEl = btn.querySelector('.ic');
+  btn.classList.toggle('saved');
+  iconEl.textContent = wasSaved ? '🔖' : '✅';
+  try {
+    await api.toggleSaveReel(reelId);
+    showToast(wasSaved ? 'Retiré des enregistrements' : 'Reel enregistré ✓', 'success');
+  } catch (err) {
+    btn.classList.toggle('saved', wasSaved);
+    iconEl.textContent = wasSaved ? '✅' : '🔖';
+    showError(err);
+  } finally {
+    delete btn.dataset.busy;
+  }
+}
+
+/* ── Share = copy a deep link, same convention as index.html/world.html ── */
+async function handleReelShare(reelId){
+  const url = `${location.origin}${location.pathname}?reel=${encodeURIComponent(reelId)}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast('Lien copié dans le presse-papiers ✓', 'success');
+  } catch (err) {
+    showToast(url, 'info');
+  }
+}
+
+/* ── Comments drawer (reuses the shared openModal()) ── */
+function openReelComments(reelId){
+  openModal(`
+    <h3 style="margin:0 0 14px">Commentaires</h3>
+    <div class="reel-comments-list" id="reelCommentsList">
+      <div style="text-align:center;color:var(--text-3);padding:20px">Chargement...</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <input type="text" id="reelCommentInput" placeholder="Ajouter un commentaire..."
+        style="flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-pill);padding:9px 14px;color:var(--text-1);font-size:13.5px"
+        onkeydown="if(event.key==='Enter') submitReelComment('${reelId}')">
+      <button class="btn btn-primary btn-sm" onclick="submitReelComment('${reelId}')">Envoyer</button>
+    </div>`);
+  loadReelComments(reelId);
+}
+async function loadReelComments(reelId){
+  const listEl = document.getElementById('reelCommentsList');
+  try {
+    const comments = await api.getReelComments(reelId);
+    if (!listEl) return;
+    listEl.innerHTML = comments.length ? comments.map(c => `
+      <div class="reel-comment-row">
+        <img class="avatar" src="${c.author?.avatar_url || 'https://i.pravatar.cc/60?u=' + (c.author?.id || 'x')}" style="width:28px;height:28px;flex:none">
+        <div><b>${escapeHtml(c.author ? (c.author.first_name + ' ' + (c.author.last_name || '')).trim() : 'Utilisateur')}</b><br>
+        <span style="color:var(--text-2)">${renderPostText(c.content)}</span></div>
+      </div>`).join('') : `<div style="text-align:center;color:var(--text-3);padding:20px">Aucun commentaire pour l'instant.</div>`;
+  } catch (err) {
+    if (listEl) listEl.innerHTML = `<div style="text-align:center;color:var(--red);padding:20px">${escapeHtml(err.message || 'Erreur de chargement.')}</div>`;
+  }
+}
+async function submitReelComment(reelId){
+  const input = document.getElementById('reelCommentInput');
+  const text = input?.value.trim();
+  if (!text) return;
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    const session = await DB.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+  }
+  input.disabled = true;
+  try {
+    await api.addReelComment(reelId, text);
+    input.value = '';
+    await loadReelComments(reelId);
+    const item = document.querySelector(`.reel-item[data-reel-id="${reelId}"]`);
+    const commentBtn = item?.querySelector('.reel-action-btn[onclick^="openReelComments"]');
+    const countEl = commentBtn?.querySelector('.count');
+    if (countEl) countEl.textContent = (parseInt(countEl.textContent, 10) || 0) + 1;
+  } catch (err) {
+    showError(err);
+  } finally {
+    input.disabled = false;
+  }
+}
+
+/* ── Upload modal (Issue: no way to publish a Reel existed at all) ── */
+const REEL_MAX_MB = 100;
+const REEL_ALLOWED_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
+let _pendingReelFile = null;
+
+function openUploadReelModal(){
+  _pendingReelFile = null;
+  openModal(`
+    <h3 style="margin:0 0 16px">Publier un Reel</h3>
+    <div class="field">
+      <label>Vidéo (MP4, WEBM ou MOV — ${REEL_MAX_MB} Mo max)</label>
+      <input type="file" id="reelVideoInput" accept="video/mp4,video/webm,video/quicktime" onchange="handleReelVideoSelect(event)">
+    </div>
+    <div id="reelPreviewWrap" style="margin-bottom:14px"></div>
+    <div class="field"><label>Légende</label><textarea id="reelCaptionInput" rows="3" placeholder="Écrivez une légende... (@mention #tag)"></textarea></div>
+    <div id="reelUploadErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" id="reelPublishBtn" onclick="handlePublishReel()">Publier</button>
+    </div>`);
+}
+function handleReelVideoSelect(evt){
+  const file = evt.target.files?.[0];
+  const errEl = document.getElementById('reelUploadErr');
+  errEl.hidden = true;
+  _pendingReelFile = null;
+  document.getElementById('reelPreviewWrap').innerHTML = '';
+  if (!file) return;
+  if (!REEL_ALLOWED_TYPES.includes(file.type)) {
+    errEl.textContent = `Format non supporté : ${file.name}. Utilisez MP4, WEBM ou MOV.`;
+    errEl.hidden = false;
+    return;
+  }
+  if (file.size > REEL_MAX_MB * 1024 * 1024) {
+    errEl.textContent = `"${file.name}" dépasse la taille maximale de ${REEL_MAX_MB} Mo.`;
+    errEl.hidden = false;
+    return;
+  }
+  _pendingReelFile = file;
+  const url = URL.createObjectURL(file);
+  document.getElementById('reelPreviewWrap').innerHTML =
+    `<video src="${url}" controls muted style="max-width:100%;max-height:260px;border-radius:10px;display:block;margin:0 auto;background:#000"></video>`;
+}
+async function handlePublishReel(){
+  const errEl = document.getElementById('reelUploadErr');
+  errEl.hidden = true;
+  if (!_pendingReelFile) {
+    errEl.textContent = 'Sélectionnez une vidéo avant de publier.';
+    errEl.hidden = false;
+    return;
+  }
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    const session = await DB.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+  }
+  const caption = document.getElementById('reelCaptionInput').value.trim();
+  const btn = document.getElementById('reelPublishBtn');
+  btn.disabled = true;
+  btn.textContent = 'Envoi...';
+  try {
+    const videoUrl = await api.uploadReelMedia(_pendingReelFile);
+    await api.createReel(videoUrl, caption, null);
+    closeModal();
+    showToast('Reel publié ✓', 'success');
+    render();
+  } catch (err) {
+    errEl.textContent = err.message || 'Impossible de publier ce Reel. Réessayez.';
+    errEl.hidden = false;
+    btn.disabled = false;
+    btn.textContent = 'Publier';
+  }
+}
+
+function mainReels(reels){
+  return `
+  <div class="reels-page">
+    <div class="reels-head">
+      <h2>🎬 Reels</h2>
+      <button class="btn btn-primary btn-sm" onclick="openUploadReelModal()">+ Publier un Reel</button>
+    </div>
+    <div class="reels-shell" id="reelsShell">
+      ${reels.length ? reels.map(reelItemHTML).join('') : `
+        <div class="card card-pad" style="text-align:center;color:var(--text-3)">
+          Aucun Reel pour le moment. Soyez le premier à en publier un !
+        </div>`}
+    </div>
+  </div>`;
+}
+
+async function render(){
+  const reels = await api.getReels();
+  initLayout({ active: 'reels', mainHTML: mainReels(reels), noRail: true });
+  if (reels.length) initReelObserver();
+}
+render();
+</script>
+</body>
+</html>

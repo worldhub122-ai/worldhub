@@ -950,6 +950,142 @@ const DB = (() => {
     return data;
   }
 
+  // ---------------- Reels (Issue: le bouton "🎬 Reels" de la barre
+  // latérale pointait vers "#" — aucune table, aucun stockage dédié,
+  // aucune lecture/publication/interaction n'existaient). ----------------
+  const REEL_SELECT = `id, video_url, thumbnail_url, caption, world_id, view_count, created_at,
+    author:profiles!reels_author_id_fkey(id, first_name, last_name, handle, avatar_url),
+    reel_likes(user_id),
+    reel_comments(id, content, created_at, author:profiles(id, first_name, last_name, handle, avatar_url))`;
+
+  async function listReels({ limit=20, worldId=null, authorId=null } = {}){
+    assertConnected();
+    let q = sbClient.from('reels')
+      .select(REEL_SELECT)
+      .order('created_at', { ascending:false })
+      .limit(limit);
+    if(worldId) q = q.eq('world_id', worldId);
+    if(authorId) q = q.eq('author_id', authorId);
+    const { data, error } = await q;
+    if(error) throw error;
+    return data;
+  }
+
+  async function getReel(reelId){
+    assertConnected();
+    const { data, error } = await sbClient.from('reels').select(REEL_SELECT).eq('id', reelId).single();
+    if(error) throw error;
+    return data;
+  }
+
+  // يرفع فيديو (أو صورة مصغّرة) الريل إلى bucket "reel-media" ويرجع رابطه العام
+  async function uploadReelMedia(file){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('Vous devez être connecté(e) pour envoyer un fichier.');
+    const ext = (file.name.split('.').pop() || 'mp4').toLowerCase();
+    const path = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+    const { error: upErr } = await sbClient.storage.from('reel-media').upload(path, file, {
+      cacheControl:'3600', upsert:false,
+    });
+    if(upErr) throw upErr;
+    const { data } = sbClient.storage.from('reel-media').getPublicUrl(path);
+    return data.publicUrl;
+  }
+
+  async function createReel({ videoUrl, thumbnailUrl=null, caption='', worldId=null }){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('Vous devez être connecté(e) pour publier un Reel.');
+    if(!videoUrl) throw new Error('Une vidéo est requise pour publier un Reel.');
+    const { data, error } = await sbClient.from('reels')
+      .insert({ author_id:user.id, video_url:videoUrl, thumbnail_url:thumbnailUrl, caption, world_id:worldId })
+      .select().single();
+    if(error) throw error;
+    return data;
+  }
+
+  async function updateReel(reelId, { caption } = {}){
+    assertConnected();
+    const patch = { edited_at: new Date().toISOString() };
+    if(caption !== undefined) patch.caption = caption;
+    const { data, error } = await sbClient.from('reels').update(patch).eq('id', reelId).select().single();
+    if(error) throw error;
+    return data;
+  }
+
+  async function deleteReel(reelId){
+    assertConnected();
+    const { error } = await sbClient.from('reels').delete().eq('id', reelId);
+    if(error) throw error;
+  }
+
+  async function toggleReelLike(reelId){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('Vous devez être connecté(e) pour aimer un Reel.');
+    const { data: existing } = await sbClient.from('reel_likes').select('*').eq('reel_id', reelId).eq('user_id', user.id).maybeSingle();
+    if(existing){
+      await sbClient.from('reel_likes').delete().eq('reel_id', reelId).eq('user_id', user.id);
+      return false;
+    }else{
+      await sbClient.from('reel_likes').insert({ reel_id:reelId, user_id:user.id });
+      return true;
+    }
+  }
+
+  async function addReelComment(reelId, content){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('Vous devez être connecté(e) pour commenter.');
+    const { data, error } = await sbClient.from('reel_comments')
+      .insert({ reel_id:reelId, author_id:user.id, content })
+      .select('*, author:profiles(id, first_name, last_name, handle, avatar_url)').single();
+    if(error) throw error;
+    return data;
+  }
+
+  async function listReelComments(reelId){
+    assertConnected();
+    const { data, error } = await sbClient.from('reel_comments')
+      .select('*, author:profiles(id, first_name, last_name, handle, avatar_url)')
+      .eq('reel_id', reelId).order('created_at', { ascending:true });
+    if(error) throw error;
+    return data;
+  }
+
+  async function toggleSaveReel(reelId){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('Vous devez être connecté(e) pour enregistrer.');
+    const { data: existing } = await sbClient.from('saved_reels').select('*').eq('reel_id', reelId).eq('user_id', user.id).maybeSingle();
+    if(existing){
+      await sbClient.from('saved_reels').delete().eq('reel_id', reelId).eq('user_id', user.id);
+      return false;
+    }else{
+      await sbClient.from('saved_reels').insert({ reel_id:reelId, user_id:user.id });
+      return true;
+    }
+  }
+
+  async function listSavedReelIds(){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) return [];
+    const { data, error } = await sbClient.from('saved_reels').select('reel_id').eq('user_id', user.id);
+    if(error) throw error;
+    return data.map(r=>r.reel_id);
+  }
+
+  // تسجيل مشاهدة (لا يُفشل التشغيل إن فشل — إثراء إحصائي فقط)
+  async function logReelView(reelId){
+    if(!isConnected) return;
+    try{
+      const user = await getCurrentUser();
+      await sbClient.from('reel_views').insert({ reel_id:reelId, viewer_id:user?.id || null });
+    }catch(err){ console.warn('[WorldHub] logReelView failed:', err.message); }
+  }
+
   // ---------------- Dashboard ----------------
   async function getDashboardSummary(){
     assertConnected();
@@ -985,6 +1121,9 @@ const DB = (() => {
     listEvents, createEvent, rsvpEvent,
     listListings, createListing, orderListing,
     createPoll, getPollForPost, votePoll,
+    listReels, getReel, uploadReelMedia, createReel, updateReel, deleteReel,
+    toggleReelLike, addReelComment, listReelComments,
+    toggleSaveReel, listSavedReelIds, logReelView,
     getDashboardSummary, getDailyInteractions,
   };
 })();

@@ -6,7 +6,7 @@
 
 const NAV = [
   { id:'home',          icon:'🏠', label:'Accueil',            href:'index.html' },
-  { id:'reels',         icon:'🎬', label:'Reels',               href:'#' },
+  { id:'reels',         icon:'🎬', label:'Reels',               href:'reels.html' },
   { id:'messages',      icon:'💬', label:'Messages',            href:'messages.html', badge:null },
   { id:'notifications', icon:'🔔', label:'Notifications',       href:'notifications.html', badge:null },
   { id:'create',        icon:'➕', label:'Créer une publication', href:'create-post.html' },
@@ -94,6 +94,23 @@ const MOCK = {
     { name:'Studio Kaya',     followers:'9.2k',  openJobs:4,  sector:'Design' },
     { name:'Vertex AI Labs',  followers:'31.8k', openJobs:7,  sector:'Intelligence Artificielle' },
     { name:'Lumen Ventures',  followers:'6.1k',  openJobs:2,  sector:'Startup Studio' },
+  ],
+
+  /* Fallback reels used only when Supabase isn't connected — public
+     domain / royalty-free sample clips so the page isn't empty. */
+  reels: [
+    { id:'r1', author:'Sarah Parker', handle:'@sarah.parker', avatarUrl:'https://i.pravatar.cc/80?img=5',
+      caption:'Petite démo de mon setup de code la nuit 💻🌙 #Programmation', world:'programming', time:'il y a 3h',
+      videoUrl:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4', thumbnailUrl:null,
+      views:12400, likes:834, comments:2, commentList:[] },
+    { id:'r2', author:'Alex Dev', handle:'@alex.dev', avatarUrl:'https://i.pravatar.cc/80?img=13',
+      caption:'3 astuces CSS que peu de devs connaissent 🎨', world:'design', time:'il y a 6h',
+      videoUrl:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4', thumbnailUrl:null,
+      views:8900, likes:512, comments:0, commentList:[] },
+    { id:'r3', author:'John Doe', handle:'@johndoe', avatarUrl:'https://i.pravatar.cc/80?img=32',
+      caption:'Un weekend hackathon inoubliable 🚀 #IA', world:'ai', time:'il y a 1j',
+      videoUrl:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/coffee.mp4', thumbnailUrl:null,
+      views:22100, likes:1830, comments:5, commentList:[] },
   ],
 
   listings: [
@@ -686,6 +703,28 @@ async function _hydrateRepostStats(mapped){
   return mapped;
 }
 
+/* ── Normalise one Supabase `reels` row into the shape reels.html expects.
+   Mirrors _mapPostRow() above but for the reels table (separate from
+   posts: no repost/quote/poll concepts apply to reels). ── */
+function _mapReelRow(r){
+  return {
+    id: r.id,
+    authorId: r.author?.id || null,
+    author: r.author ? (r.author.first_name + ' ' + (r.author.last_name || '')).trim() : 'Utilisateur',
+    handle: r.author?.handle || '@user',
+    avatarUrl: r.author?.avatar_url || null,
+    caption: r.caption || '',
+    videoUrl: r.video_url,
+    thumbnailUrl: r.thumbnail_url || null,
+    world: r.world_id || '',
+    time: _relTime(r.created_at),
+    views: r.view_count || 0,
+    likes: Array.isArray(r.reel_likes) ? r.reel_likes.length : 0,
+    comments: Array.isArray(r.reel_comments) ? r.reel_comments.length : 0,
+    commentList: Array.isArray(r.reel_comments) ? r.reel_comments : [],
+  };
+}
+
 const api = {
 
   /* ── Feed (Issue 4) ── */
@@ -1235,6 +1274,68 @@ const api = {
     return true;
   },
 
+  /* ── Reels (Issue: le "🎬 Reels" de la sidebar pointait vers "#" —
+     aucune table, aucun stockage, aucune interaction n'existait). Mock
+     mode utilise MOCK.reels + un compteur de likes/vues purement local
+     (perdu au rechargement), pour que la page reste utilisable sans
+     backend au lieu d'être vide. ── */
+  async getReels() {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try {
+        const rows = await DB.listReels({ limit: 20 });
+        return rows.map(_mapReelRow);
+      } catch (err) { console.warn('[WorldHub] getReels fell back to mock:', err.message); }
+    }
+    return MOCK.reels.map(r => ({ ...r }));
+  },
+  async uploadReelMedia(file) {
+    if (typeof DB === 'undefined' || !DB.isConnected) {
+      // pas de backend -> aperçu local uniquement, jamais persistant
+      return URL.createObjectURL(file);
+    }
+    return DB.uploadReelMedia(file);
+  },
+  async createReel(videoUrl, caption, thumbnailUrl) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.createReel({ videoUrl, caption, thumbnailUrl });
+    console.log('createReel->mock', videoUrl, caption);
+    const reel = {
+      id: 'mock-' + Date.now(), authorId: null,
+      author: MOCK.user.name, handle: MOCK.user.handle, avatarUrl: MOCK.user.avatar,
+      caption: caption || '', videoUrl, thumbnailUrl: thumbnailUrl || null, world: '',
+      time: 'à l\'instant', views: 0, likes: 0, comments: 0, commentList: [],
+    };
+    MOCK.reels.unshift(reel);
+    return reel;
+  },
+  async toggleReelLike(reelId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.toggleReelLike(reelId);
+    console.log('toggleReelLike->mock', reelId);
+    return true;
+  },
+  async addReelComment(reelId, content) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.addReelComment(reelId, content);
+    console.log('addReelComment->mock', reelId, content);
+    return {
+      id: 'mock-' + Date.now(), content,
+      author: { first_name: MOCK.user.name.split(' ')[0], last_name: MOCK.user.name.split(' ').slice(1).join(' '), avatar_url: MOCK.user.avatar },
+    };
+  },
+  async getReelComments(reelId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try { return await DB.listReelComments(reelId); } catch (err) { console.warn('[WorldHub] getReelComments failed:', err.message); }
+    }
+    return [];
+  },
+  async toggleSaveReel(reelId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.toggleSaveReel(reelId);
+    console.log('toggleSaveReel->mock', reelId);
+    return true;
+  },
+  async logReelView(reelId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.logReelView(reelId);
+    return null; // pas de suivi de vues en mode démo
+  },
+
   /* ── Search (Issue: the topbar search box did nothing at all — no
      query reached the DB, no results page existed). Real search hits
      posts/profiles/worlds/companies/jobs via DB.searchAll(); mock mode
@@ -1384,10 +1485,12 @@ const api = {
 
 /* ── Notification display helpers (map DB `type` -> icon/color/text) ── */
 function _notifIcon(type){
-  return { like:'❤️', comment:'💬', follow:'➕', mention:'📣', share:'🔄', repost:'🔁', system:'🌍' }[type] || '🔔';
+  return { like:'❤️', comment:'💬', follow:'➕', mention:'📣', share:'🔄', repost:'🔁', system:'🌍',
+    reel_like:'❤️', reel_comment:'💬' }[type] || '🔔';
 }
 function _notifColor(type){
-  return { like:'pink', comment:'blue', follow:'accent', mention:'accent', share:'green', repost:'green', system:'yellow' }[type] || 'accent';
+  return { like:'pink', comment:'blue', follow:'accent', mention:'accent', share:'green', repost:'green', system:'yellow',
+    reel_like:'pink', reel_comment:'blue' }[type] || 'accent';
 }
 function _notifDefaultText(n){
   const who = n.actor ? (n.actor.first_name + ' ' + (n.actor.last_name || '')).trim() : 'Quelqu\'un';
@@ -1395,6 +1498,7 @@ function _notifDefaultText(n){
     like:'a aimé votre publication', comment:'a commenté votre publication',
     follow:'a commencé à vous suivre', mention:'vous a mentionné',
     share:'a partagé votre publication', repost:'a republié votre publication',
+    reel_like:'a aimé votre Reel', reel_comment:'a commenté votre Reel',
   };
   return `${escapeHtml(who)} ${map[n.type] || 'a interagi avec votre contenu'}`;
 }

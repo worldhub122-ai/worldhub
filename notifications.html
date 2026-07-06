@@ -76,9 +76,17 @@ function filterRail(){
   </div>`;
 }
 
+/* Les Reels ont leurs propres types ('reel_like'/'reel_comment') pour un
+   texte/icône dédiés, mais côté filtres ils comptent comme "J'aime" /
+   "Commentaires" — pas la peine d'ajouter deux catégories de plus. */
+function _normalizedNotifType(type){
+  if (type === 'reel_like') return 'like';
+  if (type === 'reel_comment') return 'comment';
+  return type || 'system';
+}
 function _filteredNotifications(){
   if (_activeNotifFilter === 'all') return _allNotifications;
-  return _allNotifications.filter(n => (n.type || 'system') === _activeNotifFilter);
+  return _allNotifications.filter(n => _normalizedNotifType(n.type) === _activeNotifFilter);
 }
 
 function setNotifFilter(key){
