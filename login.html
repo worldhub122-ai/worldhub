@@ -102,6 +102,7 @@
 <body>
 
 <div class="login-root">
+  <div id="loginLangSlot" style="position:fixed;top:18px;right:18px;z-index:50"></div>
   <div class="login-card">
 
     <!-- Brand -->
@@ -244,6 +245,7 @@
 <!-- ── Scripts (Issue 6: always load Supabase before app code) ── -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="assets/js/supabase.js"></script>
+<script src="assets/js/i18n.js"></script>
 <script>
 /* ── Redirect if already authenticated ── */
 (async () => {
