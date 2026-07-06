@@ -13,12 +13,26 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="assets/js/supabase.js"></script>
 <script src="assets/js/auth-guard.js"></script>
-<script src="assets/js/i18n.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
 (async function() {
   const _session = await requireAuth();
   if (!_session) return;
+
+  /* Issue: the world_id sent to api.createPost() was hardcoded to `null`,
+     no matter what the user picked in the "Partager dans" dropdown — so
+     every post came out with world_id = null. It showed up in the global
+     feed (index.html) and on the profile (neither filters by world), but
+     never inside the world's own page (world.html filters posts with
+     .eq('world_id', worldId)). Fixed by: giving the <select> a real id,
+     using the *real* world id as each <option>'s value (was just the
+     display name, with no `id` attribute at all before), populating it
+     from api.getWorlds() (was static MOCK.worlds, so user-created worlds
+     never even appeared as an option), and actually reading the selected
+     value in handlePublish() instead of passing null. */
+  const _preselectedWorldId = new URLSearchParams(location.search).get('world') || '';
+  let _worlds = [];
+  try { _worlds = await api.getWorlds(); } catch (err) { _worlds = MOCK.worlds; }
 
 function previewCard(){
   return `
@@ -46,13 +60,12 @@ function mainCreate(){
       <div class="field">
         <label>Contenu</label>
         <textarea id="postText" rows="5" placeholder="Quoi de neuf ?" oninput="document.getElementById('previewText').textContent=this.value||'Quoi de neuf ?'"></textarea>
-        <div style="font-size:11.5px;color:var(--text-3);margin-top:4px">Astuce : utilisez @nom pour mentionner quelqu'un et #motclé pour un hashtag.</div>
       </div>
       <div class="field">
         <label>Partager dans</label>
-        <select>
-          <option>Votre profil</option>
-          ${MOCK.worlds.map(w=>`<option>${w.name}</option>`).join('')}
+        <select id="postWorldSelect">
+          <option value="">Votre profil</option>
+          ${_worlds.map(w=>`<option value="${w.id}" ${String(w.id)===String(_preselectedWorldId)?'selected':''}>${escapeHtml(w.name)}</option>`).join('')}
         </select>
       </div>
       <div id="fileErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
@@ -178,12 +191,9 @@ async function handleVideoSelect(evt){
 }
 
 /* ── Poll builder (Issue: "Sondage" chip existed but did nothing).
-   Now backed by real `polls`/`poll_options`/`poll_votes` tables
-   (schema_polls.sql) when Supabase is connected — the post is created
-   first, then the poll rows are created against its id. Without a
-   backend (mock mode) there's still no real vote counting possible, so
-   we fall back to composing the question/options into the post text
-   just so the content isn't silently lost. ── */
+   There is no dedicated polls table in the schema yet, so the poll is
+   composed into the post's text content as a clearly-marked block —
+   this keeps it real and working today without inventing a fake backend. ── */
 let _pollOptionCount = 0;
 function togglePoll(){
   const el = document.getElementById('pollBuilder');
@@ -246,17 +256,9 @@ function toggleAiSuggestions(){
 }
 
 async function handlePublish(){
-  const isConnected = typeof DB !== 'undefined' && DB.isConnected;
-  const pollEl = document.getElementById('pollBuilder');
-  const pollQuestion = pollEl.hidden ? '' : document.getElementById('pollQuestion').value.trim();
-  const pollOptionsList = pollEl.hidden ? [] : Array.from(document.querySelectorAll('#pollOptions input')).map(i=>i.value.trim()).filter(Boolean);
-  const hasValidPoll = !pollEl.hidden && pollQuestion && pollOptionsList.length >= 2;
-  /* Without a real backend there's no way to actually count votes, so
-     mock mode keeps the old plain-text fallback rather than silently
-     dropping the poll content. Connected mode creates real rows instead. */
-  const pollTextFallback = (!isConnected && hasValidPoll) ? buildPollText() : '';
-  const text = document.getElementById('postText').value.trim() + pollTextFallback;
-  if (!text.trim() && !hasValidPoll && _uploadedImageUrls.length === 0 && !_uploadedVideoUrl){
+  const pollText = buildPollText();
+  const text = document.getElementById('postText').value.trim() + pollText;
+  if (!text.trim() && _uploadedImageUrls.length === 0 && !_uploadedVideoUrl){
     const errEl = document.getElementById('fileErr');
     errEl.textContent = 'Ajoutez du texte, une image ou une vidéo avant de publier.';
     errEl.hidden = false;
@@ -266,16 +268,9 @@ async function handlePublish(){
   btn.disabled = true;
   btn.textContent = 'Publication...';
   try {
-    const post = await api.createPost(text, null, _uploadedImageUrls[0] || null, _uploadedVideoUrl || null);
-    if (hasValidPoll && isConnected && post?.id) {
-      try {
-        await api.createPoll(post.id, pollQuestion, pollOptionsList);
-      } catch (pollErr) {
-        console.warn('[WorldHub] Poll creation failed:', pollErr.message);
-        showToast('Publication créée, mais le sondage n\'a pas pu être enregistré.', 'error');
-      }
-    }
-    location.href = 'index.html';
+    const worldId = document.getElementById('postWorldSelect').value || null;
+    await api.createPost(text, worldId, _uploadedImageUrls[0] || null, _uploadedVideoUrl || null);
+    location.href = worldId ? ('world.html?id=' + encodeURIComponent(worldId)) : 'index.html';
   } catch (err) {
     const errEl = document.getElementById('fileErr');
     errEl.textContent = err.message || 'Impossible de publier. Réessayez.';
@@ -285,20 +280,6 @@ async function handlePublish(){
   }
 }
 initLayout({ active:'create', mainHTML: mainCreate(), rail: previewCard() });
-
-/* Ces fonctions sont appelées depuis des attributs onclick/onchange
-   inline dans le HTML généré ci-dessus. Ces attributs s'exécutent dans
-   le scope global (window), alors que les fonctions ci-dessus sont
-   déclarées à l'intérieur de cette IIFE async — donc invisibles depuis
-   l'extérieur tant qu'on ne les expose pas explicitement sur window.
-   (Bug: "handlePublish is not defined" au clic sur "Publier".) */
-window.togglePoll = togglePoll;
-window.removePoll = removePoll;
-window.addPollOption = addPollOption;
-window.handleImageSelect = handleImageSelect;
-window.handleVideoSelect = handleVideoSelect;
-window.toggleAiSuggestions = toggleAiSuggestions;
-window.handlePublish = handlePublish;
 
 })();
 </script>
