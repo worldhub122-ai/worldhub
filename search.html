@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WorldHub — Recherche</title>
+<title>WorldHub — Rechercher</title>
 <link rel="stylesheet" href="assets/css/main.css">
 </head>
 <body>
@@ -16,94 +16,298 @@
 <script src="assets/js/i18n.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
-const QUERY = new URLSearchParams(location.search).get('q') || '';
+/* ==========================================================
+   WorldHub — search.html
+   Issue: la barre de recherche de la topbar (handleTopbarSearch)
+   et les liens @mention/#tag (renderPostText) pointaient déjà tous
+   vers "search.html?q=..." mais cette page n'existait pas — aucune
+   recherche n'aboutissait jamais. Cette page ajoute :
+     1) un mode "Explorer" (sans requête) façon Instagram : grille de
+        Reels tendance + Mondes à découvrir, dans le style WorldHub ;
+     2) un mode "Résultats" (avec ?q=...) avec des onglets Tout /
+        Personnes / Mondes / Reels / Publications, réutilisant
+        api.search() (déjà câblé côté app.js/supabase.js) pour les
+        personnes/mondes/publications, et un filtrage local de
+        api.getReels() pour les reels (pas encore de recherche Reels
+        côté DB).
+   ========================================================== */
 
-function sectionCard(title, rowsHTML, emptyLabel){
-  return `
-  <div class="card">
-    <div class="card-head"><h3>${title}</h3></div>
-    ${rowsHTML || `<div class="row" style="padding:16px;justify-content:center;color:var(--text-3)">${emptyLabel}</div>`}
-  </div>`;
+let _q = '';
+let _tab = 'all';
+let _results = null;      // { profiles, worlds, companies, jobs, posts }
+let _reelResults = [];
+let _myWorldMemberships = new Set();
+let _meId = null;
+
+function getQueryParam(name){
+  return new URLSearchParams(location.search).get(name) || '';
 }
 
-function profileRow(p){
+/* ── Small reusable result cards ─────────────────────────────── */
+function personResultCard(u){
+  const uid = u.id;
+  const isMe = uid && _meId && String(uid) === String(_meId);
   return `
-  <div class="row" style="cursor:pointer" onclick="location.href='profile.html'">
-    <img class="avatar" src="${p.avatar}" style="width:36px;height:36px">
-    <div><div class="row-title">${escapeHtml(p.name)}</div><div class="row-sub">${escapeHtml(p.handle)}</div></div>
-  </div>`;
-}
-function postRow(p){
-  return `
-  <div class="row" style="align-items:flex-start;cursor:pointer" onclick="location.href='index.html'">
-    <img class="avatar" src="${p.avatarUrl || 'https://i.pravatar.cc/80'}" style="width:36px;height:36px;flex:none">
-    <div><div class="row-title">${escapeHtml(p.author)}</div><div class="row-sub" style="white-space:normal">${escapeHtml(p.text)}</div></div>
-  </div>`;
-}
-function worldRow(w){
-  return `
-  <div class="row" style="cursor:pointer" onclick="location.href='world.html?id=${encodeURIComponent(w.id||'')}'">
-    <div class="tile" style="background:var(--accent-soft);color:var(--accent-2)">${w.icon||'🌍'}</div>
-    <div><div class="row-title">${escapeHtml(w.name)}</div><div class="row-sub">${escapeHtml(String(w.members||0))} membres</div></div>
-  </div>`;
-}
-function companyRow(c){
-  return `
-  <div class="row" style="cursor:pointer" onclick="location.href='companies.html'">
-    <div class="tile" style="background:var(--blue-soft);color:var(--blue)">🏢</div>
-    <div><div class="row-title">${escapeHtml(c.name)}</div><div class="row-sub">${escapeHtml(c.sector||'')}</div></div>
-  </div>`;
-}
-function jobRow(j){
-  return `
-  <div class="row" style="cursor:pointer" onclick="location.href='jobs.html'">
-    <div class="tile" style="background:var(--accent-soft);color:var(--accent-2)">🧰</div>
-    <div><div class="row-title">${escapeHtml(j.title)}</div><div class="row-sub">${escapeHtml(j.company||'')} · ${escapeHtml(j.location||'')}</div></div>
+  <div class="card card-pad" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <img class="avatar" src="${u.avatar || ('https://i.pravatar.cc/100?u='+encodeURIComponent(u.handle||u.name||'x'))}"
+         style="width:52px;height:52px;cursor:pointer" onclick="location.href='profile.html${uid?('?id='+encodeURIComponent(uid)):''}'">
+    <div style="flex:1;min-width:160px;cursor:pointer" onclick="location.href='profile.html${uid?('?id='+encodeURIComponent(uid)):''}'">
+      <div style="font-weight:700;font-size:14.5px">${escapeHtml(u.name || 'Utilisateur')}</div>
+      <div style="color:var(--text-3);font-size:12.5px">${escapeHtml(u.handle || '@user')}</div>
+    </div>
+    ${(uid && !isMe) ? `<button class="btn btn-outline btn-sm" data-follow="off" data-user-id="${uid}">Suivre</button>` : ''}
   </div>`;
 }
 
-function mainSearch(q, results, loading){
-  if (!q) {
-    return `
+function worldMiniCard(w){
+  const isMember = _myWorldMemberships.has(String(w.id));
+  return `
+  <div class="card card-pad" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+    <div class="tile" style="background:var(--${w.color||'accent'}-soft);color:var(--${w.color||'accent'});width:48px;height:48px;font-size:20px;cursor:pointer"
+         onclick="location.href='world.html?id=${encodeURIComponent(w.id)}'">${w.icon||'🌍'}</div>
+    <div style="flex:1;min-width:160px;cursor:pointer" onclick="location.href='world.html?id=${encodeURIComponent(w.id)}'">
+      <div style="font-weight:700;font-size:14.5px">${escapeHtml(w.name)}</div>
+      <div style="color:var(--text-3);font-size:12.5px">${escapeHtml(String(w.members||0))} membres</div>
+    </div>
+    <button class="btn ${isMember?'btn-outline':'btn-primary'} btn-sm" data-member="${isMember?'on':'off'}"
+            onclick="handleSearchJoinWorld(this,'${w.id}')">${isMember?'Rejoint(e) ✓':'Rejoindre'}</button>
+  </div>`;
+}
+
+function reelTile(r){
+  const poster = r.thumbnailUrl;
+  return `
+  <div class="reel-tile" onclick="location.href='reels.html'"
+       style="position:relative;aspect-ratio:9/16;border-radius:var(--radius-md);overflow:hidden;cursor:pointer;background:var(--surface-3)">
+    ${poster
+      ? `<img src="${poster}" alt="" style="width:100%;height:100%;object-fit:cover;display:block">`
+      : `<video src="${r.videoUrl}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;display:block"></video>`}
+    <div style="position:absolute;left:0;right:0;bottom:0;padding:8px 10px;background:linear-gradient(transparent,rgba(0,0,0,.75));color:#fff;font-size:12px;display:flex;gap:10px;align-items:center;font-weight:600">
+      <span>▶ ${r.views||0}</span><span>❤ ${r.likes||0}</span>
+    </div>
+  </div>`;
+}
+
+function postResultCard(p){
+  return `
+  <div class="card card-pad">
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+      <img class="avatar" src="${p.avatarUrl || ('https://i.pravatar.cc/60?u='+encodeURIComponent(p.author||'x'))}" style="width:34px;height:34px">
+      <div>
+        <div style="font-weight:700;font-size:13.5px">${escapeHtml(p.author)}</div>
+        <div style="color:var(--text-3);font-size:12px">${escapeHtml(p.time||'')}</div>
+      </div>
+    </div>
+    <div class="post-text" style="font-size:14px">${renderPostText(p.text)}</div>
+  </div>`;
+}
+
+function reelsGridHTML(reels){
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px">${reels.map(reelTile).join('')}</div>`;
+}
+
+function emptyState(msg){
+  return `<div class="card card-pad" style="text-align:center;color:var(--text-3);padding:40px 20px">${msg}</div>`;
+}
+
+function sectionHeader(title, tabKey, count){
+  return `
+  <div style="display:flex;justify-content:space-between;align-items:center;margin:18px 0 10px">
+    <div style="font-weight:800;font-size:15.5px">${title}</div>
+    ${count>3 ? `<span class="link" style="font-size:13px;cursor:pointer" onclick="document.querySelector('[data-tabkey=\\'${tabKey}\\']').click()">Voir tout (${count})</span>` : ''}
+  </div>`;
+}
+
+/* ── World join (mirrors handleToggleMembership in worlds.html) ── */
+async function handleSearchJoinWorld(btn, worldId){
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    const session = await DB.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+  }
+  btn.disabled = true;
+  try {
+    const nowMember = await api.toggleWorldMembership(worldId);
+    btn.dataset.member = nowMember ? 'on' : 'off';
+    btn.textContent = nowMember ? 'Rejoint(e) ✓' : 'Rejoindre';
+    btn.classList.toggle('btn-outline', nowMember);
+    btn.classList.toggle('btn-primary', !nowMember);
+    if (nowMember) _myWorldMemberships.add(String(worldId)); else _myWorldMemberships.delete(String(worldId));
+  } catch (err) {
+    showError(err);
+  } finally {
+    btn.disabled = false;
+  }
+}
+window.handleSearchJoinWorld = handleSearchJoinWorld;
+
+async function hydrateWorldMemberships(worlds){
+  _myWorldMemberships = new Set();
+  if (typeof DB === 'undefined' || !DB.isConnected) return;
+  try {
+    const session = await DB.getSession();
+    if (!session) return;
+  } catch { return; }
+  await Promise.all((worlds||[]).map(async w => {
+    try { if (await api.isWorldMember(w.id)) _myWorldMemberships.add(String(w.id)); } catch {}
+  }));
+}
+
+/* ── Tab switching for search-results mode ───────────────────── */
+function switchSearchTab(tabEl, tab){
+  document.querySelectorAll('#searchTabs .tab').forEach(t => t.classList.remove('active'));
+  tabEl.classList.add('active');
+  _tab = tab;
+  renderResultsBody();
+}
+window.switchSearchTab = switchSearchTab;
+
+function renderResultsBody(){
+  const bodyEl = document.getElementById('searchResultsBody');
+  if (!bodyEl || !_results) return;
+  const { profiles=[], worlds=[], posts=[] } = _results;
+  const reels = _reelResults;
+
+  let html = '';
+  if (_tab === 'all') {
+    const total = profiles.length + worlds.length + reels.length + posts.length;
+    if (!total) {
+      html = emptyState(`Aucun résultat pour « ${escapeHtml(_q)} ».`);
+    } else {
+      if (profiles.length) {
+        html += sectionHeader('Personnes', 'people', profiles.length);
+        html += profiles.slice(0,3).map(personResultCard).join('');
+      }
+      if (worlds.length) {
+        html += sectionHeader('Mondes', 'worlds', worlds.length);
+        html += worlds.slice(0,3).map(worldMiniCard).join('');
+      }
+      if (reels.length) {
+        html += sectionHeader('Reels', 'reels', reels.length);
+        html += reelsGridHTML(reels.slice(0,6));
+      }
+      if (posts.length) {
+        html += sectionHeader('Publications', 'posts', posts.length);
+        html += posts.slice(0,3).map(postResultCard).join('');
+      }
+    }
+  } else if (_tab === 'people') {
+    html = profiles.length ? profiles.map(personResultCard).join('') : emptyState('Aucune personne trouvée.');
+  } else if (_tab === 'worlds') {
+    html = worlds.length ? worlds.map(worldMiniCard).join('') : emptyState('Aucun monde trouvé.');
+  } else if (_tab === 'reels') {
+    html = reels.length ? reelsGridHTML(reels) : emptyState('Aucun reel trouvé.');
+  } else if (_tab === 'posts') {
+    html = posts.length ? posts.map(postResultCard).join('') : emptyState('Aucune publication trouvée.');
+  }
+  bodyEl.innerHTML = html;
+  wireGlobalInteractions();
+}
+
+/* ── Search-results mode (?q=...) ────────────────────────────── */
+async function runSearch(q){
+  const mainHTML = `
     <div class="main-col">
-      <div class="card card-pad" style="text-align:center;color:var(--text-3)">
-        Utilisez la barre de recherche en haut (ou ⌘K) pour trouver des personnes, publications, mondes, entreprises ou offres.
+      <div class="card card-pad">
+        <div class="search-box" style="max-width:none;margin-bottom:14px">
+          <span>🔍</span>
+          <input type="text" id="searchPageInput" value="${escapeHtml(q)}"
+                 placeholder="Rechercher des personnes, mondes, reels..."
+                 onkeydown="if(event.key==='Enter'){ event.stopPropagation(); const v=this.value.trim(); if(v) location.href='search.html?q='+encodeURIComponent(v); }">
+        </div>
+        <div class="tabs" id="searchTabs">
+          <div class="tab active" data-tabkey="all" onclick="switchSearchTab(this,'all')">Tout</div>
+          <div class="tab" data-tabkey="people" onclick="switchSearchTab(this,'people')">Personnes</div>
+          <div class="tab" data-tabkey="worlds" onclick="switchSearchTab(this,'worlds')">Mondes</div>
+          <div class="tab" data-tabkey="reels" onclick="switchSearchTab(this,'reels')">Reels</div>
+          <div class="tab" data-tabkey="posts" onclick="switchSearchTab(this,'posts')">Publications</div>
+        </div>
+      </div>
+      <div id="searchResultsBody">
+        <div class="card card-pad" style="text-align:center;color:var(--text-3)">Recherche en cours…</div>
       </div>
     </div>`;
+  initLayout({ active:'', mainHTML, noRail:true, wide:true });
+
+  const input = document.getElementById('searchPageInput');
+  if (input) input.addEventListener('keydown', e => e.stopPropagation());
+
+  try {
+    const profile = await api.getCurrentProfile();
+    _meId = profile?.id || null;
+  } catch { _meId = null; }
+
+  try {
+    const [results, reels] = await Promise.all([api.search(q), api.getReels()]);
+    _results = results;
+    const ql = q.toLowerCase().replace(/^[@#]/, '');
+    _reelResults = (reels || []).filter(r =>
+      (r.caption || '').toLowerCase().includes(ql) ||
+      (r.author  || '').toLowerCase().includes(ql) ||
+      (r.handle  || '').toLowerCase().includes(ql)
+    );
+    await hydrateWorldMemberships(_results.worlds);
+    _tab = 'all';
+    renderResultsBody();
+  } catch (err) {
+    showError(err, document.getElementById('searchResultsBody'));
   }
-  if (loading) {
-    return `
+}
+
+/* ── Explore mode (no query) — Instagram-style discovery grid ── */
+async function renderExplore(){
+  const rail = railWorlds() + railTrending() + railTopMembers();
+  const mainHTML = `
     <div class="main-col">
-      <div class="card card-pad" style="text-align:center;color:var(--text-3)">Recherche en cours...</div>
+      <div class="card card-pad">
+        <div style="font-size:19px;font-weight:800;margin-bottom:4px">Explorer</div>
+        <div style="color:var(--text-3);font-size:13.5px;margin-bottom:14px">Découvrez des personnes, des Mondes et des Reels qui pourraient vous plaire.</div>
+        <div class="search-box" style="max-width:none">
+          <span>🔍</span>
+          <input type="text" id="exploreSearchInput" placeholder="Rechercher des personnes, mondes, reels..."
+                 onkeydown="if(event.key==='Enter'){ event.stopPropagation(); const v=this.value.trim(); if(v) location.href='search.html?q='+encodeURIComponent(v); }">
+        </div>
+      </div>
+      <div class="card card-pad">
+        <div style="font-weight:800;font-size:15.5px;margin-bottom:10px">🎬 Reels tendance</div>
+        <div id="exploreReelsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px">
+          <div style="grid-column:1/-1;text-align:center;color:var(--text-3);padding:20px">Chargement…</div>
+        </div>
+      </div>
+      <div class="card card-pad">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-weight:800;font-size:15.5px">🧭 Découvrir des Mondes</div>
+          <span class="link" style="font-size:13px;cursor:pointer" onclick="location.href='worlds.html'">Voir tout</span>
+        </div>
+        <div id="exploreWorldsGrid">
+          <div style="text-align:center;color:var(--text-3);padding:20px">Chargement…</div>
+        </div>
+      </div>
     </div>`;
-  }
-  const totalCount = results.profiles.length + results.posts.length + results.worlds.length + results.companies.length + results.jobs.length;
-  return `
-  <div class="main-col">
-    <div class="card card-pad">
-      <div style="font-size:19px;font-weight:800">Résultats pour « ${escapeHtml(q)} »</div>
-      <div style="color:var(--text-3);font-size:13px;margin-top:4px">${totalCount} résultat${totalCount>1?'s':''}</div>
-    </div>
-    ${sectionCard('Personnes', results.profiles.map(profileRow).join(''), 'Aucune personne trouvée.')}
-    ${sectionCard('Publications', results.posts.map(postRow).join(''), 'Aucune publication trouvée.')}
-    ${sectionCard('Mondes', results.worlds.map(worldRow).join(''), 'Aucun monde trouvé.')}
-    ${sectionCard('Entreprises', results.companies.map(companyRow).join(''), 'Aucune entreprise trouvée.')}
-    ${sectionCard('Offres d’emploi', results.jobs.map(jobRow).join(''), 'Aucune offre trouvée.')}
-  </div>`;
+  initLayout({ active:'', mainHTML, rail, wide:true });
+
+  const sInput = document.getElementById('exploreSearchInput');
+  if (sInput) sInput.addEventListener('keydown', e => e.stopPropagation());
+
+  try {
+    const reels = await api.getReels();
+    const grid = document.getElementById('exploreReelsGrid');
+    grid.innerHTML = reels.length ? reels.map(reelTile).join('')
+      : `<div style="grid-column:1/-1;text-align:center;color:var(--text-3);padding:20px">Aucun reel pour le moment.</div>`;
+  } catch (err) { console.warn('[WorldHub] explore reels failed:', err.message); }
+
+  try {
+    const worlds = await api.getWorlds();
+    await hydrateWorldMemberships(worlds);
+    const wgrid = document.getElementById('exploreWorldsGrid');
+    wgrid.innerHTML = worlds.slice(0,6).map(worldMiniCard).join('') || emptyState('Aucun monde pour le moment.');
+    wireGlobalInteractions();
+  } catch (err) { console.warn('[WorldHub] explore worlds failed:', err.message); }
 }
 
 async function render(){
-  initLayout({ active:'home', mainHTML: mainSearch(QUERY, null, true), noRail:true });
-  /* Prefill the topbar search box with the current query so it doesn't
-     look empty/disconnected from the results shown below. */
-  const input = document.getElementById('topbarSearchInput');
-  if (input) input.value = QUERY;
-
-  if (!QUERY) return;
-  const results = await api.search(QUERY);
-  initLayout({ active:'home', mainHTML: mainSearch(QUERY, results, false), noRail:true });
-  const input2 = document.getElementById('topbarSearchInput');
-  if (input2) input2.value = QUERY;
+  _q = getQueryParam('q');
+  if (!_q) { await renderExplore(); return; }
+  await runSearch(_q);
 }
 render();
 </script>
