@@ -18,6 +18,7 @@ const NAV = [
   { id:'ai',           icon:'🤖', label:'IA & ML',         href:'world.html?id=ai', accent:'blue' },
   { id:'design',       icon:'🎨', label:'Design',          href:'world.html?id=design', accent:'pink' },
   { id:'entrepreneur', icon:'💼', label:'Entrepreneuriat', href:'world.html?id=entrepreneur', accent:'yellow' },
+  { id:'worlds',       icon:'🧭', label:'Explorer les Mondes', href:'worlds.html' },
   { id:'div2' },
   { id:'jobs',        icon:'🧰', label:'Offres d\'emploi', href:'jobs.html' },
   { id:'companies',   icon:'🏢', label:'Entreprises',     href:'companies.html' },
@@ -378,12 +379,12 @@ function renderSidebar(active){
 /* ---------------- RIGHT RAIL ---------------- */
 function railWorlds(){
   return `<div class="card">
-    <div class="card-head"><h3>Découvrir des Mondes</h3><span class="link">Voir tout</span></div>
+    <div class="card-head"><h3>Découvrir des Mondes</h3><span class="link" onclick="location.href='worlds.html'">Voir tout</span></div>
     ${MOCK.worlds.slice(0,4).map(w=>`
       <div class="row" style="cursor:pointer" onclick="location.href='world.html?id=${encodeURIComponent(w.id)}'">
         ${tile(w.icon,w.color)}
         <div><div class="row-title">${w.name}</div><div class="row-sub">${w.members} membres</div></div>
-        <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="event.stopPropagation();location.href='world.html?id=${encodeURIComponent(w.id)}'">Rejoindre</button>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="event.stopPropagation();location.href='world.html?id=${encodeURIComponent(w.id)}'">Voir</button>
       </div>`).join('')}
   </div>`;
 }
@@ -771,6 +772,7 @@ const api = {
           return rows.map(w => ({
             id: w.id, icon: w.icon || '🌍', color: w.color || 'accent',
             name: w.name, members: w.member_count != null ? String(w.member_count) : '',
+            description: w.description || '', createdBy: w.created_by || null,
           }));
         }
       } catch (err) {
@@ -781,12 +783,130 @@ const api = {
   },
 
   /* ── Single world (by id/slug) ── used by world.html to know which
-     world it's rendering (name, icon, member count, description). ── */
+     world it's rendering (name, icon, member count, description).
+     Issue: this used to reuse getWorlds()'s mapped shape, which never
+     carried `description`/`createdBy` — world.html always showed the
+     generic placeholder text instead of the real description. ── */
   async getWorld(worldId) {
     const worlds = await this.getWorlds();
     const found = worlds.find(w => String(w.id) === String(worldId));
     if (found) return found;
     return MOCK.worlds.find(w => w.id === worldId) || MOCK.worlds[0];
+  },
+
+  /* ── Create a brand-new world (Issue: no UI/API existed at all to
+     create a world — the sidebar only ever showed 4 hardcoded ones). ── */
+  async createWorld({ id, name, icon, color, description }) {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      return DB.createWorld({ id, name, icon, color, description });
+    }
+    console.log('createWorld->mock', id, name);
+    const w = { id, name, icon: icon || '🌍', color: color || 'accent', description: description || '', members: '0' };
+    MOCK.worlds.push(w);
+    return w;
+  },
+
+  /* ── Edit a world's name/icon/color/description (owner/admin only —
+     enforced server-side by RLS; the button is also hidden client-side
+     for non-admins). ── */
+  async updateWorld(worldId, patch) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.updateWorld(worldId, patch);
+    console.log('updateWorld->mock', worldId, patch);
+    const w = MOCK.worlds.find(w => w.id === worldId);
+    if (w) Object.assign(w, patch);
+    return w;
+  },
+
+  /* ── Delete a world (owner only). ── */
+  async deleteWorld(worldId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) { await DB.deleteWorld(worldId); return true; }
+    console.log('deleteWorld->mock', worldId);
+    MOCK.worlds = MOCK.worlds.filter(w => w.id !== worldId);
+    return true;
+  },
+
+  /* ── Current user's role in a world: 'owner' | 'admin' | 'member' | null.
+     Used to decide whether to show "⚙️ Gérer" / member-management controls. ── */
+  async getWorldRole(worldId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try { return await DB.getMyWorldRole(worldId); } catch (err) { console.warn('[WorldHub] getWorldRole failed:', err.message); }
+    }
+    return null;
+  },
+
+  /* ── Member list for the "Membres" tab, with role badges. ── */
+  async getWorldMembers(worldId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try {
+        const rows = await DB.getWorldMembers(worldId);
+        return rows.map(r => ({
+          id: r.profile?.id || r.user_id,
+          name: r.profile ? (r.profile.first_name + ' ' + (r.profile.last_name || '')).trim() : 'Utilisateur',
+          handle: r.profile?.handle || '',
+          avatar: r.profile?.avatar_url || `https://i.pravatar.cc/80?u=${r.user_id}`,
+          role: r.role,
+        }));
+      } catch (err) { console.warn('[WorldHub] getWorldMembers failed:', err.message); }
+    }
+    return [];
+  },
+  async setWorldMemberRole(worldId, userId, role) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.updateWorldMemberRole(worldId, userId, role);
+    console.log('setWorldMemberRole->mock', worldId, userId, role);
+    return true;
+  },
+  async removeWorldMember(worldId, userId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.removeWorldMember(worldId, userId);
+    console.log('removeWorldMember->mock', worldId, userId);
+    return true;
+  },
+
+  /* ── Invite a user (by profile id) to a world — creates a real
+     notification for them (Issue: no invite mechanism existed). ── */
+  async inviteToWorld(worldId, invitedUserId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.inviteToWorld(worldId, invitedUserId);
+    console.log('inviteToWorld->mock', worldId, invitedUserId);
+    return true;
+  },
+
+  /* ── Resources tab ── */
+  async getWorldResources(worldId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try {
+        const rows = await DB.listWorldResources(worldId);
+        return rows.map(r => ({
+          id: r.id, title: r.title, url: r.url, type: r.resource_type,
+          addedBy: r.added_by ? (r.added_by.first_name + ' ' + (r.added_by.last_name || '')).trim() : 'Utilisateur',
+        }));
+      } catch (err) { console.warn('[WorldHub] getWorldResources failed:', err.message); }
+    }
+    return [];
+  },
+  async addWorldResource(worldId, { title, url, resourceType }) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.addWorldResource(worldId, { title, url, resourceType });
+    console.log('addWorldResource->mock', worldId, title, url);
+    return { id: 'mock-' + Date.now(), title, url, type: resourceType || 'link', addedBy: MOCK.user.name };
+  },
+  async deleteWorldResource(resourceId) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.deleteWorldResource(resourceId);
+    console.log('deleteWorldResource->mock', resourceId);
+    return true;
+  },
+
+  /* ── Search scoped to a single world's posts (Issue: no way to search
+     inside a world — only the global topbar search existed). ── */
+  async searchInWorld(worldId, query) {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try {
+        const rows = await DB.searchWorldPosts(worldId, query);
+        const mapped = rows.map(_mapPostRow);
+        await _hydrateRepostStats(mapped);
+        return mapped;
+      } catch (err) { console.warn('[WorldHub] searchInWorld failed:', err.message); }
+    }
+    const q = (query || '').toLowerCase();
+    const world = MOCK.worlds.find(w => w.id === worldId);
+    return MOCK.posts.filter(p => p.world === (world ? world.name : worldId) && p.text.toLowerCase().includes(q));
   },
 
   /* ── Posts scoped to a single world ── */
@@ -1218,10 +1338,10 @@ const api = {
   },
 
   /* ── Events ── */
-  async getEvents() {
+  async getEvents(worldId = null) {
     if (typeof DB !== 'undefined' && DB.isConnected) {
       try {
-        const rows = await DB.listEvents();
+        const rows = await DB.listEvents({ worldId });
         return rows.map(e => {
           const d = new Date(e.starts_at);
           return {
@@ -1234,7 +1354,7 @@ const api = {
         });
       } catch (err) { console.warn('[WorldHub] getEvents fell back to mock:', err.message); }
     }
-    return MOCK.events;
+    return worldId ? [] : MOCK.events;
   },
   async rsvpEvent(eventId) {
     if (typeof DB !== 'undefined' && DB.isConnected) return DB.rsvpEvent(eventId, 'going');
@@ -1486,11 +1606,11 @@ const api = {
 /* ── Notification display helpers (map DB `type` -> icon/color/text) ── */
 function _notifIcon(type){
   return { like:'❤️', comment:'💬', follow:'➕', mention:'📣', share:'🔄', repost:'🔁', system:'🌍',
-    reel_like:'❤️', reel_comment:'💬' }[type] || '🔔';
+    reel_like:'❤️', reel_comment:'💬', world_invite:'🌐' }[type] || '🔔';
 }
 function _notifColor(type){
   return { like:'pink', comment:'blue', follow:'accent', mention:'accent', share:'green', repost:'green', system:'yellow',
-    reel_like:'pink', reel_comment:'blue' }[type] || 'accent';
+    reel_like:'pink', reel_comment:'blue', world_invite:'blue' }[type] || 'accent';
 }
 function _notifDefaultText(n){
   const who = n.actor ? (n.actor.first_name + ' ' + (n.actor.last_name || '')).trim() : 'Quelqu\'un';
@@ -1499,6 +1619,7 @@ function _notifDefaultText(n){
     follow:'a commencé à vous suivre', mention:'vous a mentionné',
     share:'a partagé votre publication', repost:'a republié votre publication',
     reel_like:'a aimé votre Reel', reel_comment:'a commenté votre Reel',
+    world_invite:'vous invite à rejoindre un monde',
   };
   return `${escapeHtml(who)} ${map[n.type] || 'a interagi avec votre contenu'}`;
 }

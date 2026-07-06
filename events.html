@@ -15,6 +15,13 @@
 <script src="assets/js/auth-guard.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
+/* ?world=<id> — venir depuis l'onglet "Événements du monde" d'une page
+   monde (world.html). Filtre la liste et pré-remplit le formulaire de
+   création (Issue: aucun lien entre les événements et un monde donné
+   n'existait dans l'interface, même si events.world_id existe en base). */
+const FILTER_WORLD_ID = new URLSearchParams(location.search).get('world') || null;
+let _filterWorldName = '';
+
 function eventCard(e){
   return `
   <div class="card card-pad" style="display:flex;gap:16px;align-items:flex-start">
@@ -68,6 +75,11 @@ async function handleRsvp(btn){
 function mainEvents(events){
   return `
   <div class="main-col">
+    ${FILTER_WORLD_ID ? `
+    <div class="card card-pad" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <span>📅 Événements du monde <b>${escapeHtml(_filterWorldName || FILTER_WORLD_ID)}</b></span>
+      <span class="link" onclick="location.href='world.html?id=${encodeURIComponent(FILTER_WORLD_ID)}'">← Retour au monde</span>
+    </div>` : ''}
     <div class="card card-pad" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <div>
         <div class="tabs" style="border:none;padding:0">
@@ -77,7 +89,7 @@ function mainEvents(events){
       </div>
       <button class="btn btn-primary" onclick="openCreateEventModal()">+ Créer un événement</button>
     </div>
-    ${events.length ? events.map(eventCard).join('') : `<div class="card card-pad" style="text-align:center;color:var(--text-3)">Aucun événement à venir.</div>`}
+    ${events.length ? events.map(eventCard).join('') : `<div class="card card-pad" style="text-align:center;color:var(--text-3)">Aucun événement à venir${FILTER_WORLD_ID ? ' dans ce monde' : ''}.</div>`}
   </div>`;
 }
 
@@ -90,7 +102,7 @@ function openCreateEventModal(){
     <div class="field"><label>Description</label><textarea id="ceDesc" rows="3" placeholder="Décrivez votre événement"></textarea></div>
     <div class="field"><label>Date et heure de début</label><input id="ceStart" type="datetime-local"></div>
     <div class="field"><label>Lieu</label><input id="ceLocation" placeholder="ex: Paris, France"></div>
-    <div class="field"><label>Monde</label><select id="ceWorld"><option value="">Aucun</option>${MOCK.worlds.map(w=>`<option value="${w.id}">${w.name}</option>`).join('')}</select></div>
+    <div class="field"><label>Monde</label><select id="ceWorld"><option value="">Aucun</option>${MOCK.worlds.map(w=>`<option value="${w.id}" ${FILTER_WORLD_ID===w.id?'selected':''}>${w.name}</option>`).join('')}</select></div>
     <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-2);margin-bottom:14px"><input type="checkbox" id="ceOnline"> Événement en ligne</label>
     <div id="ceErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
     <div style="display:flex;gap:10px;justify-content:flex-end">
@@ -126,8 +138,11 @@ async function submitCreateEvent(){
 }
 
 async function render(){
-  const events = await api.getEvents();
-  initLayout({ active:'events', mainHTML: mainEvents(events), rail: eventsRail() });
+  if (FILTER_WORLD_ID) {
+    try { const w = await api.getWorld(FILTER_WORLD_ID); _filterWorldName = w?.name || ''; } catch {}
+  }
+  const events = await api.getEvents(FILTER_WORLD_ID);
+  initLayout({ active: FILTER_WORLD_ID || 'events', mainHTML: mainEvents(events), rail: eventsRail() });
 }
 render();
 </script>

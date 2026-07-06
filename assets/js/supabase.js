@@ -755,6 +755,122 @@ const DB = (() => {
     return !!data;
   }
 
+  // ---------------- Worlds (creation / edition / suppression) ----------------
+  async function createWorld({ id, name, icon='🌍', color='accent', description='' }){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('Vous devez être connecté(e) pour créer un monde.');
+    const { data, error } = await sbClient.from('worlds')
+      .insert({ id, name, icon, color, description, created_by: user.id })
+      .select().single();
+    if(error) throw error;
+    return data;
+  }
+
+  async function updateWorld(worldId, { name, icon, color, description } = {}){
+    assertConnected();
+    const patch = {};
+    if(name !== undefined) patch.name = name;
+    if(icon !== undefined) patch.icon = icon;
+    if(color !== undefined) patch.color = color;
+    if(description !== undefined) patch.description = description;
+    const { data, error } = await sbClient.from('worlds').update(patch).eq('id', worldId).select().single();
+    if(error) throw error;
+    return data;
+  }
+
+  async function deleteWorld(worldId){
+    assertConnected();
+    const { error } = await sbClient.from('worlds').delete().eq('id', worldId);
+    if(error) throw error;
+  }
+
+  // ---------------- Worlds (membres/rôles) ----------------
+  async function getWorldMembers(worldId){
+    assertConnected();
+    const { data, error } = await sbClient
+      .from('world_members')
+      .select('user_id, role, joined_at, profile:profiles(id, first_name, last_name, handle, avatar_url)')
+      .eq('world_id', worldId)
+      .order('role', { ascending: true })
+      .order('joined_at', { ascending: true });
+    if(error) throw error;
+    return data;
+  }
+
+  async function getMyWorldRole(worldId){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) return null;
+    const { data } = await sbClient.from('world_members').select('role').eq('world_id', worldId).eq('user_id', user.id).maybeSingle();
+    return data ? data.role : null;
+  }
+
+  async function updateWorldMemberRole(worldId, userId, role){
+    assertConnected();
+    const { error } = await sbClient.from('world_members').update({ role }).eq('world_id', worldId).eq('user_id', userId);
+    if(error) throw error;
+  }
+
+  async function removeWorldMember(worldId, userId){
+    assertConnected();
+    const { error } = await sbClient.from('world_members').delete().eq('world_id', worldId).eq('user_id', userId);
+    if(error) throw error;
+  }
+
+  async function inviteToWorld(worldId, invitedUserId){
+    assertConnected();
+    const { error } = await sbClient.rpc('invite_to_world', { p_world_id: worldId, p_invited_user_id: invitedUserId });
+    if(error) throw error;
+  }
+
+  // ---------------- Worlds (ressources) ----------------
+  async function listWorldResources(worldId){
+    assertConnected();
+    const { data, error } = await sbClient
+      .from('world_resources')
+      .select('id, title, url, resource_type, created_at, added_by:profiles(id, first_name, last_name)')
+      .eq('world_id', worldId)
+      .order('created_at', { ascending: false });
+    if(error) throw error;
+    return data;
+  }
+
+  async function addWorldResource(worldId, { title, url, resourceType='link' }){
+    assertConnected();
+    const user = await getCurrentUser();
+    if(!user) throw new Error('Vous devez être connecté(e).');
+    const { data, error } = await sbClient.from('world_resources')
+      .insert({ world_id: worldId, title, url, resource_type: resourceType, added_by: user.id })
+      .select().single();
+    if(error) throw error;
+    return data;
+  }
+
+  async function deleteWorldResource(resourceId){
+    assertConnected();
+    const { error } = await sbClient.from('world_resources').delete().eq('id', resourceId);
+    if(error) throw error;
+  }
+
+  // ---------------- Worlds (recherche interne) ----------------
+  // Recherche de publications à l'intérieur d'un seul monde (Issue: pas
+  // de moyen de chercher un sujet précis sans parcourir tout le fil).
+  async function searchWorldPosts(worldId, query){
+    assertConnected();
+    const q = (query || '').trim();
+    if(!q) return [];
+    const { data, error } = await sbClient
+      .from('posts')
+      .select(POST_SELECT)
+      .eq('world_id', worldId)
+      .ilike('content', `%${q}%`)
+      .order('created_at', { ascending: false })
+      .limit(30);
+    if(error) throw error;
+    return data;
+  }
+
   // ---------------- Companies ----------------
   async function listCompanies(){
     assertConnected();
@@ -1116,6 +1232,10 @@ const DB = (() => {
     listNotifications, markNotificationRead, markAllNotificationsRead, getUnreadNotificationCount,
     listWorlds, getUnreadMessageCount,
     joinWorld, leaveWorld, isWorldMember,
+    createWorld, updateWorld, deleteWorld,
+    getWorldMembers, getMyWorldRole, updateWorldMemberRole, removeWorldMember,
+    inviteToWorld, listWorldResources, addWorldResource, deleteWorldResource,
+    searchWorldPosts,
     listCompanies, createCompany, toggleFollowCompany,
     listJobs, createJob, applyToJob,
     listEvents, createEvent, rsvpEvent,

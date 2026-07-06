@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorldHub — Explorer les Mondes</title>
+<link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<div id="topbar-slot"></div>
+<div id="shell-slot"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/supabase.js"></script>
+<script src="assets/js/auth-guard.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+/* ==========================================================
+   WorldHub — worlds.html
+   Issue: il n'existait AUCUNE page pour parcourir tous les Mondes —
+   la sidebar n'en montrait que 4 en dur, et il n'y avait aucun moyen
+   d'en créer un nouveau. Cette page liste tous les Mondes (avec
+   recherche), permet de rejoindre/quitter, et ouvre un vrai formulaire
+   de création (DB.createWorld existe désormais dans supabase.js).
+   ========================================================== */
+
+let _allWorlds = [];
+let _myMemberships = new Set(); // ids des mondes dont je suis membre
+
+function worldCard(w){
+  const isMember = _myMemberships.has(String(w.id));
+  return `
+  <div class="card card-pad" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+    <div class="tile" style="background:var(--${w.color||'accent'}-soft);color:var(--${w.color||'accent'});width:52px;height:52px;font-size:22px;cursor:pointer" onclick="location.href='world.html?id=${encodeURIComponent(w.id)}'">${w.icon||'🌍'}</div>
+    <div style="flex:1;min-width:180px;cursor:pointer" onclick="location.href='world.html?id=${encodeURIComponent(w.id)}'">
+      <div style="font-weight:700;font-size:15.5px">${escapeHtml(w.name)}</div>
+      <div style="color:var(--text-3);font-size:13px;margin-top:2px">${escapeHtml(String(w.members||0))} membres${w.description?' · '+escapeHtml(w.description):''}</div>
+    </div>
+    <button class="btn ${isMember?'btn-outline':'btn-primary'} btn-sm" data-world-id="${w.id}" data-member="${isMember?'on':'off'}" onclick="handleToggleMembership(this)">${isMember?'Rejoint(e) ✓':'Rejoindre'}</button>
+  </div>`;
+}
+
+async function handleToggleMembership(btn){
+  const worldId = btn.dataset.worldId;
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    const session = await DB.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+  }
+  btn.disabled = true;
+  try {
+    const nowMember = await api.toggleWorldMembership(worldId);
+    btn.dataset.member = nowMember ? 'on' : 'off';
+    btn.textContent = nowMember ? 'Rejoint(e) ✓' : 'Rejoindre';
+    btn.classList.toggle('btn-outline', nowMember);
+    btn.classList.toggle('btn-primary', !nowMember);
+    if (nowMember) _myMemberships.add(String(worldId)); else _myMemberships.delete(String(worldId));
+  } catch (err) {
+    showError(err);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ── Create-world modal (Issue: no way to create a world existed) ── */
+function _slugify(name){
+  return (name||'').toString().trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0, 40) || ('monde-' + Date.now());
+}
+const WORLD_COLORS = ['accent','green','blue','pink','yellow'];
+function openCreateWorldModal(){
+  openModal(`
+    <h3 style="margin:0 0 16px">Créer un monde</h3>
+    <div class="field"><label>Nom</label><input id="cwName" placeholder="ex: Photographie" oninput="document.getElementById('cwSlugHint').textContent = '/world.html?id=' + _slugify(this.value)"></div>
+    <div id="cwSlugHint" style="font-size:11.5px;color:var(--text-3);margin:-6px 0 12px"></div>
+    <div class="field"><label>Icône (emoji)</label><input id="cwIcon" placeholder="🌍" maxlength="4" value="🌍"></div>
+    <div class="field">
+      <label>Couleur</label>
+      <select id="cwColor">${WORLD_COLORS.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>Description</label><textarea id="cwDesc" rows="3" placeholder="De quoi parle ce monde ?"></textarea></div>
+    <div id="cwErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" id="cwSubmit" onclick="submitCreateWorld()">Créer</button>
+    </div>`);
+}
+async function submitCreateWorld(){
+  const name = document.getElementById('cwName').value.trim();
+  const icon = document.getElementById('cwIcon').value.trim() || '🌍';
+  const color = document.getElementById('cwColor').value;
+  const description = document.getElementById('cwDesc').value.trim();
+  const errEl = document.getElementById('cwErr');
+  if (!name){ errEl.textContent = 'Le nom du monde est requis.'; errEl.hidden = false; return; }
+  if (typeof DB !== 'undefined' && DB.isConnected){
+    const session = await DB.getSession();
+    if (!session){ window.location.href = 'login.html'; return; }
+  }
+  const btn = document.getElementById('cwSubmit');
+  btn.disabled = true; btn.textContent = 'Création...';
+  try{
+    const id = _slugify(name);
+    await api.createWorld({ id, name, icon, color, description });
+    closeModal();
+    showToast('Monde créé ✓', 'success');
+    location.href = 'world.html?id=' + encodeURIComponent(id);
+  }catch(err){
+    errEl.textContent = err.message || 'Impossible de créer ce monde (ce nom existe peut-être déjà).';
+    errEl.hidden = false;
+    btn.disabled = false; btn.textContent = 'Créer';
+  }
+}
+window._slugify = _slugify;
+window.openCreateWorldModal = openCreateWorldModal;
+window.submitCreateWorld = submitCreateWorld;
+window.handleToggleMembership = handleToggleMembership;
+
+function worldsRail(){
+  return `
+  <div class="card card-pad" style="text-align:center">
+    <div style="font-size:28px;margin-bottom:6px">🧭</div>
+    <div style="font-weight:700;margin-bottom:4px">Créez votre communauté</div>
+    <p style="font-size:12.5px;color:var(--text-3);margin:0 0 12px">Rassemblez des membres autour d'un sujet qui vous passionne.</p>
+    <button class="btn btn-primary" style="width:100%" onclick="openCreateWorldModal()">+ Créer un monde</button>
+  </div>`;
+}
+
+function mainWorlds(worlds, query){
+  const filtered = query
+    ? worlds.filter(w => w.name.toLowerCase().includes(query.toLowerCase()))
+    : worlds;
+  return `
+  <div class="main-col">
+    <div class="card card-pad" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div style="font-size:19px;font-weight:800">Explorer les Mondes</div>
+      <div class="search-box" style="max-width:280px">
+        <span>🔍</span><input id="worldsSearchInput" placeholder="Rechercher un monde..." value="${escapeHtml(query||'')}" oninput="handleWorldsSearch(this.value)">
+      </div>
+    </div>
+    <div id="worldsListEl">
+      ${filtered.length ? filtered.map(worldCard).join('') : `<div class="card card-pad" style="text-align:center;color:var(--text-3)">Aucun monde ne correspond à cette recherche.</div>`}
+    </div>
+  </div>`;
+}
+
+function handleWorldsSearch(q){
+  const listEl = document.getElementById('worldsListEl');
+  if (!listEl) return;
+  const filtered = q ? _allWorlds.filter(w => w.name.toLowerCase().includes(q.toLowerCase())) : _allWorlds;
+  listEl.innerHTML = filtered.length ? filtered.map(worldCard).join('') : `<div class="card card-pad" style="text-align:center;color:var(--text-3)">Aucun monde ne correspond à cette recherche.</div>`;
+  /* Keep focus on the input after re-render */
+}
+window.handleWorldsSearch = handleWorldsSearch;
+
+async function render(){
+  _allWorlds = await api.getWorlds();
+  _myMemberships = new Set();
+  if (typeof DB !== 'undefined' && DB.isConnected) {
+    const session = await DB.getSession();
+    if (session) {
+      await Promise.all(_allWorlds.map(async w => {
+        try { if (await api.isWorldMember(w.id)) _myMemberships.add(String(w.id)); } catch {}
+      }));
+    }
+  }
+  initLayout({ active:'worlds', mainHTML: mainWorlds(_allWorlds, ''), rail: worldsRail() });
+  const input = document.getElementById('worldsSearchInput');
+  if (input) input.addEventListener('keydown', e => e.stopPropagation());
+}
+render();
+</script>
+</body>
+</html>
