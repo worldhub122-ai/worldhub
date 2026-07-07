@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WorldHub — Événements</title>
+<meta name="description" content="Découvrez et créez des événements dans vos Mondes préférés sur WorldHub.">
 <link rel="stylesheet" href="assets/css/main.css">
 </head>
 <body>
@@ -13,7 +14,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="assets/js/supabase.js"></script>
 <script src="assets/js/auth-guard.js"></script>
-<script src="assets/js/i18n.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
 /* ?world=<id> — venir depuis l'onglet "Événements du monde" d'une page
@@ -22,6 +22,7 @@
    n'existait dans l'interface, même si events.world_id existe en base). */
 const FILTER_WORLD_ID = new URLSearchParams(location.search).get('world') || null;
 let _filterWorldName = '';
+let _worlds = [];
 
 function eventCard(e){
   return `
@@ -37,14 +38,28 @@ function eventCard(e){
     </div>
   </div>`;
 }
-function eventsRail(){
+/* Issue: the category rows here ("Tous les événements", "Programmation",
+   "IA & ML", ...) had no onclick at all — clicking them did literally
+   nothing — and the list came from static MOCK.worlds instead of the
+   real worlds (so any world you actually created never showed up as a
+   category). Now: takes the real worlds list, each row navigates to
+   events.html?world=<id> (mirrors the same URL-driven filter the page
+   already reads via FILTER_WORLD_ID on load), "Tous les événements"
+   clears the filter, and the active category is highlighted based on
+   the current filter instead of always bolding the first item. */
+function eventsRail(worlds){
+  const categories = [{ id: null, name: 'Tous les événements' }, ...worlds];
   return `
   <div class="card card-pad">
     <h3 style="margin:0 0 12px;font-size:15px">Catégories</h3>
-    ${['Tous les événements',...MOCK.worlds.map(w=>w.name)].map((c,i)=>`
-      <div class="row" style="padding:8px 0;justify-content:space-between">
-        <span style="font-size:13.5px;${i===0?'font-weight:700;color:var(--text-1)':'color:var(--text-2)'}">${c}</span>
-      </div>`).join('')}
+    ${categories.map(c=>{
+      const isActive = c.id ? String(c.id) === String(FILTER_WORLD_ID) : !FILTER_WORLD_ID;
+      const href = c.id ? ('events.html?world=' + encodeURIComponent(c.id)) : 'events.html';
+      return `
+      <div class="row" style="padding:8px 0;justify-content:space-between;cursor:pointer" onclick="location.href='${href}'">
+        <span style="font-size:13.5px;${isActive?'font-weight:700;color:var(--text-1)':'color:var(--text-2)'}">${escapeHtml(c.name)}</span>
+      </div>`;
+    }).join('')}
   </div>
   <div class="card card-pad" style="text-align:center">
     <div style="font-size:28px;margin-bottom:6px">📅</div>
@@ -103,7 +118,7 @@ function openCreateEventModal(){
     <div class="field"><label>Description</label><textarea id="ceDesc" rows="3" placeholder="Décrivez votre événement"></textarea></div>
     <div class="field"><label>Date et heure de début</label><input id="ceStart" type="datetime-local"></div>
     <div class="field"><label>Lieu</label><input id="ceLocation" placeholder="ex: Paris, France"></div>
-    <div class="field"><label>Monde</label><select id="ceWorld"><option value="">Aucun</option>${MOCK.worlds.map(w=>`<option value="${w.id}" ${FILTER_WORLD_ID===w.id?'selected':''}>${w.name}</option>`).join('')}</select></div>
+    <div class="field"><label>Monde</label><select id="ceWorld"><option value="">Aucun</option>${_worlds.map(w=>`<option value="${w.id}" ${FILTER_WORLD_ID===w.id?'selected':''}>${escapeHtml(w.name)}</option>`).join('')}</select></div>
     <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-2);margin-bottom:14px"><input type="checkbox" id="ceOnline"> Événement en ligne</label>
     <div id="ceErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
     <div style="display:flex;gap:10px;justify-content:flex-end">
@@ -142,8 +157,9 @@ async function render(){
   if (FILTER_WORLD_ID) {
     try { const w = await api.getWorld(FILTER_WORLD_ID); _filterWorldName = w?.name || ''; } catch {}
   }
+  try { _worlds = await api.getWorlds(); } catch (err) { _worlds = MOCK.worlds; }
   const events = await api.getEvents(FILTER_WORLD_ID);
-  initLayout({ active: FILTER_WORLD_ID || 'events', mainHTML: mainEvents(events), rail: eventsRail() });
+  initLayout({ active: FILTER_WORLD_ID || 'events', mainHTML: mainEvents(events), rail: eventsRail(_worlds) });
 }
 render();
 </script>

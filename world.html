@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WorldHub — Monde</title>
+<meta name="description" content="Rejoignez cette communauté sur WorldHub : publications, membres, événements et ressources partagées.">
 <link rel="stylesheet" href="assets/css/main.css">
 </head>
 <body>
@@ -24,13 +25,22 @@ let _isMember = false;
 let _myRole = null;      // 'owner' | 'admin' | 'member' | null
 let _meId = null;
 let _worldPosts = [];
-let _worldMembers = null;    // lazy-loaded on first "Membres" tab click
+let _worldMembers = null;
 let _worldEvents = null;     // lazy-loaded on first "Événements" tab click
-let _worldResources = null;  // lazy-loaded on first "Ressources" tab click
+let _worldResources = null;
+let _worldSearchActive = false;
+let _inviteSearchTimer = null;
+let _inviteSearchToken = 0;
 const ROLE_LABEL = { owner:'Propriétaire', admin:'Admin', member:'Membre' };
 const RESOURCE_ICON = { link:'🔗', video:'🎬', article:'📄', doc:'📚' };
 
-function worldRail(world){
+/* Issue: "Admins" showed MOCK.topMembers (unrelated to this world at
+   all) and "Ressources populaires" was 3 hardcoded links that never
+   changed. Both api.getWorldMembers() and api.getWorldResources()
+   already existed and are now fetched once in render(), so the rail
+   can show this world's real admins/owner and real resources. */
+function worldRail(world, members, resources){
+  const admins = (members||[]).filter(m => m.role === 'owner' || m.role === 'admin').slice(0,3);
   return `
   <div class="card card-pad">
     <h3 style="margin:0 0 12px;font-size:15px">À propos</h3>
@@ -41,14 +51,19 @@ function worldRail(world){
   </div>
   <div class="card">
     <div class="card-head"><h3>Ressources populaires</h3></div>
-    <div class="row"><div><div class="row-title">JavaScript Roadmap</div><div class="row-sub">Guide complet</div></div></div>
-    <div class="row"><div><div class="row-title">React Documentation officielle</div><div class="row-sub">Référence</div></div></div>
-    <div class="row"><div><div class="row-title">Node.js Best Practices</div><div class="row-sub">Guide</div></div></div>
+    ${(resources||[]).length ? resources.slice(0,3).map(r=>`
+      <div class="row"><a href="${r.url}" target="_blank" rel="noopener" style="display:flex;gap:10px;align-items:center;color:inherit;text-decoration:none;width:100%">
+        <span style="font-size:16px">${RESOURCE_ICON[r.type]||'🔗'}</span>
+        <div><div class="row-title">${escapeHtml(r.title)}</div><div class="row-sub">Ajouté par ${escapeHtml(r.addedBy)}</div></div>
+      </a></div>`).join('') : `<div class="row" style="color:var(--text-3);font-size:13px;padding:12px 16px">Aucune ressource pour le moment.</div>`}
   </div>
   <div class="card">
     <div class="card-head"><h3>Admins</h3></div>
-    ${MOCK.topMembers.slice(0,2).map(m=>`
-      <div class="row"><img class="avatar" src="${m.avatar}" style="width:34px;height:34px"><div><div class="row-title">${escapeHtml(m.name)}</div><div class="row-sub">${m.meta.includes('@')?escapeHtml(m.meta):'@'+m.name.toLowerCase().replace(' ','.')}</div></div></div>`).join('')}
+    ${admins.length ? admins.map(m=>`
+      <div class="row" style="cursor:pointer" onclick="location.href='profile.html?id=${encodeURIComponent(m.id)}'">
+        <img class="avatar" src="${m.avatar}" alt="${escapeHtml(m.name)}" style="width:34px;height:34px">
+        <div><div class="row-title">${escapeHtml(m.name)}</div><div class="row-sub">${escapeHtml(m.handle || ROLE_LABEL[m.role] || '')}</div></div>
+      </div>`).join('') : `<div class="row" style="color:var(--text-3);font-size:13px;padding:12px 16px">Aucun admin pour le moment.</div>`}
   </div>`;
 }
 
@@ -56,7 +71,7 @@ function worldPostCard(p){
   return `
   <div class="post">
     <div class="post-head">
-      <img class="avatar" src="${p.avatarUrl || ('https://i.pravatar.cc/80?u='+encodeURIComponent(p.handle||p.author))}" style="width:40px;height:40px">
+      <img class="avatar" src="${p.avatarUrl || ('https://i.pravatar.cc/80?u='+encodeURIComponent(p.handle||p.author))}" alt="${escapeHtml(p.author||'')}" style="width:40px;height:40px">
       <div><div class="u-name">${escapeHtml(p.author)}</div><div class="u-meta">${escapeHtml(p.time)}</div></div>
       <span class="more">⋯</span>
     </div>
@@ -71,7 +86,7 @@ function worldPostCard(p){
       <div class="a-btn" onclick="handleShare('${p.id || ''}')">🔄 Partager</div>
     </div>
     <div class="comment-box" id="cbox-${p.id || ''}" hidden style="display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--border-soft)">
-      <img class="avatar" src="${MOCK.user.avatar}" style="width:28px;height:28px;flex:none">
+      <img class="avatar" src="${MOCK.user.avatar}" alt="" style="width:28px;height:28px;flex:none">
       <input type="text" placeholder="Écrire un commentaire..." id="cinput-${p.id || ''}" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-pill);padding:8px 14px;color:var(--text-1);font-size:13.5px" onkeydown="if(event.key==='Enter') submitComment('${p.id || ''}')">
       <button class="btn btn-primary btn-sm" onclick="submitComment('${p.id || ''}')">Envoyer</button>
     </div>
@@ -149,11 +164,22 @@ async function handleJoinWorld(btn){
    them did nothing, and only "Publications" ever had real content.
    api.getWorldMembers()/api.getEvents()/api.getWorldResources() all
    already existed and worked, they just had nowhere to render. ── */
+/* Issue: api.searchInWorld() already existed in app.js (scoped search
+   inside a single world's posts) but there was no search box anywhere
+   on this page to call it — only the global topbar search existed. */
 function worldPostsTabHTML(posts){
   return `
+    <div class="card-pad" style="padding-bottom:0;display:flex;gap:10px;align-items:center">
+      <div class="search-box" style="flex:1;max-width:none">
+        <span>🔍</span>
+        <input type="text" id="worldSearchInput" placeholder="Rechercher dans ${escapeHtml(_world.name)}..."
+               onkeydown="if(event.key==='Enter'){ event.preventDefault(); handleWorldSearch(this.value.trim()); }">
+      </div>
+      <span class="link" id="worldSearchClear" style="font-size:12.5px;cursor:pointer;white-space:nowrap" ${_worldSearchActive?'':'hidden'} onclick="clearWorldSearch()">✕ Effacer</span>
+    </div>
     <div class="composer">
       <div class="composer-top">
-        <img class="avatar" src="${MOCK.user.avatar}" style="width:38px;height:38px">
+        <img class="avatar" src="${MOCK.user.avatar}" alt="" style="width:38px;height:38px">
         <div class="fake-input" onclick="location.href='create-post.html?world=${encodeURIComponent(WORLD_ID)}'">Quoi de neuf dans ${escapeHtml(_world.name)} ?</div>
       </div>
       <div class="composer-actions">
@@ -161,18 +187,50 @@ function worldPostsTabHTML(posts){
         <div class="spacer"></div><button class="btn btn-primary btn-sm" onclick="location.href='create-post.html?world=${encodeURIComponent(WORLD_ID)}'">Publier</button>
       </div>
     </div>
-    ${posts.length ? posts.map(worldPostCard).join('') : `<div class="card-pad" style="text-align:center;color:var(--text-3)">Aucune publication pour le moment dans ce monde.</div>`}`;
+    <div id="worldPostsListWrap">${_renderWorldPostsList(posts)}</div>`;
 }
+function _renderWorldPostsList(posts){
+  if (posts.length) return posts.map(worldPostCard).join('');
+  return `<div class="card-pad" style="text-align:center;color:var(--text-3)">${_worldSearchActive ? 'Aucun résultat pour cette recherche.' : 'Aucune publication pour le moment dans ce monde.'}</div>`;
+}
+async function handleWorldSearch(q){
+  if (!q) { clearWorldSearch(); return; }
+  _worldSearchActive = true;
+  const clearBtn = document.getElementById('worldSearchClear');
+  if (clearBtn) clearBtn.hidden = false;
+  const wrap = document.getElementById('worldPostsListWrap');
+  if (wrap) wrap.innerHTML = `<div class="card-pad" style="text-align:center;color:var(--text-3)">Recherche...</div>`;
+  try {
+    const results = await api.searchInWorld(WORLD_ID, q);
+    if (wrap) { wrap.innerHTML = _renderWorldPostsList(results); wireGlobalInteractions(); }
+  } catch (err) {
+    if (wrap) wrap.innerHTML = `<div class="card-pad" style="text-align:center;color:var(--text-3)">Erreur de recherche. Réessayez.</div>`;
+  }
+}
+function clearWorldSearch(){
+  _worldSearchActive = false;
+  const input = document.getElementById('worldSearchInput');
+  if (input) input.value = '';
+  const clearBtn = document.getElementById('worldSearchClear');
+  if (clearBtn) clearBtn.hidden = true;
+  const wrap = document.getElementById('worldPostsListWrap');
+  if (wrap) { wrap.innerHTML = _renderWorldPostsList(_worldPosts); wireGlobalInteractions(); }
+}
+window.handleWorldSearch = handleWorldSearch;
+window.clearWorldSearch = clearWorldSearch;
 
 function worldMembersTabHTML(members){
-  if (!members.length) return `<div class="card-pad" style="text-align:center;color:var(--text-3)">Aucun membre pour le moment.</div>`;
-  return `<div class="card-pad" style="display:flex;flex-direction:column;gap:2px">
+  const header = `<div class="card-pad" style="display:flex;justify-content:flex-end">
+    <button class="btn btn-primary btn-sm" onclick="openInviteModal()">+ Inviter</button>
+  </div>`;
+  if (!members.length) return header + `<div class="card-pad" style="text-align:center;color:var(--text-3)">Aucun membre pour le moment.</div>`;
+  return header + `<div class="card-pad" style="display:flex;flex-direction:column;gap:2px">
     ${members.map(m=>{
       const canManage = (_myRole === 'owner' || _myRole === 'admin') && m.role !== 'owner' && String(m.id) !== String(_meId);
       return `
       <div class="row" style="padding:10px 0;justify-content:space-between;flex-wrap:wrap;gap:8px">
         <div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="location.href='profile.html?id=${encodeURIComponent(m.id)}'">
-          <img class="avatar" src="${m.avatar}" style="width:38px;height:38px">
+          <img class="avatar" src="${m.avatar}" alt="${escapeHtml(m.name)}" style="width:38px;height:38px">
           <div><div class="row-title">${escapeHtml(m.name)}</div><div class="row-sub">${escapeHtml(m.handle||'')}</div></div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
@@ -183,6 +241,64 @@ function worldMembersTabHTML(members){
     }).join('')}
   </div>`;
 }
+
+/* Issue: api.inviteToWorld() already existed (creates a real
+   notification for the invited user) but there was no invite button
+   or UI anywhere to trigger it. */
+function openInviteModal(){
+  openModal(`
+    <h3 style="margin:0 0 16px">Inviter dans ${escapeHtml(_world.name)}</h3>
+    <div class="field"><label>Rechercher une personne</label><input id="inviteSearchInput" placeholder="Nom ou @handle..." oninput="handleInviteSearchInputDebounced(this.value)"></div>
+    <div id="inviteResults" style="max-height:280px;overflow:auto;margin-bottom:6px"></div>
+    <div style="display:flex;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModal()">Fermer</button>
+    </div>`);
+}
+function handleInviteSearchInputDebounced(q){
+  clearTimeout(_inviteSearchTimer);
+  _inviteSearchTimer = setTimeout(() => handleInviteSearchInput(q), 300);
+}
+async function handleInviteSearchInput(q){
+  const token = ++_inviteSearchToken;
+  const resultsEl = document.getElementById('inviteResults');
+  if (!resultsEl) return;
+  const query = (q || '').trim();
+  if (query.length < 2) { resultsEl.innerHTML = `<div style="color:var(--text-3);font-size:13px;padding:8px 0">Tapez au moins 2 caractères.</div>`; return; }
+  resultsEl.innerHTML = `<div style="color:var(--text-3);font-size:13px;padding:8px 0">Recherche...</div>`;
+  try {
+    const results = await api.search(query);
+    if (token !== _inviteSearchToken) return; // a newer keystroke superseded this response
+    const memberIds = new Set((_worldMembers||[]).map(m => String(m.id)));
+    const profiles = (results.profiles||[]).filter(p => p.id && !memberIds.has(String(p.id)));
+    resultsEl.innerHTML = profiles.length ? profiles.map(p=>`
+      <div class="row" style="justify-content:space-between;padding:8px 0">
+        <div style="display:flex;align-items:center;gap:10px">
+          <img class="avatar" src="${p.avatar || ('https://i.pravatar.cc/60?u='+encodeURIComponent(p.handle||p.name||'x'))}" alt="${escapeHtml(p.name||'')}" style="width:32px;height:32px">
+          <div><div class="row-title">${escapeHtml(p.name||'Utilisateur')}</div><div class="row-sub">${escapeHtml(p.handle||'')}</div></div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="handleInviteUser('${p.id}', this)">Inviter</button>
+      </div>`).join('') : `<div style="color:var(--text-3);font-size:13px;padding:8px 0">Aucun résultat.</div>`;
+  } catch (err) {
+    if (token !== _inviteSearchToken) return;
+    resultsEl.innerHTML = `<div style="color:var(--red);font-size:13px;padding:8px 0">Erreur de recherche.</div>`;
+  }
+}
+async function handleInviteUser(userId, btn){
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    await api.inviteToWorld(WORLD_ID, userId);
+    btn.textContent = 'Invité ✓';
+    btn.classList.remove('btn-outline');
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Inviter';
+    showError(err);
+  }
+}
+window.openInviteModal = openInviteModal;
+window.handleInviteSearchInputDebounced = handleInviteSearchInputDebounced;
+window.handleInviteUser = handleInviteUser;
 async function handleRemoveMember(userId){
   if (!confirm('Retirer ce membre du monde ?')) return;
   try {
@@ -291,19 +407,21 @@ async function switchWorldTab(tabEl, tab){
     wireGlobalInteractions();
     return;
   }
-  container.innerHTML = `<div class="card-pad" style="text-align:center;color:var(--text-3)">Chargement...</div>`;
   if (tab === 'members'){
     if (_worldMembers === null){
+      container.innerHTML = `<div class="card-pad" style="text-align:center;color:var(--text-3)">Chargement...</div>`;
       try { _worldMembers = await api.getWorldMembers(WORLD_ID); } catch (err) { _worldMembers = []; console.warn('[WorldHub] getWorldMembers failed:', err.message); }
     }
     container.innerHTML = worldMembersTabHTML(_worldMembers);
   } else if (tab === 'events'){
+    container.innerHTML = `<div class="card-pad" style="text-align:center;color:var(--text-3)">Chargement...</div>`;
     if (_worldEvents === null){
       try { _worldEvents = await api.getEvents(WORLD_ID); } catch (err) { _worldEvents = []; console.warn('[WorldHub] getEvents failed:', err.message); }
     }
     container.innerHTML = worldEventsTabHTML(_worldEvents);
   } else if (tab === 'resources'){
     if (_worldResources === null){
+      container.innerHTML = `<div class="card-pad" style="text-align:center;color:var(--text-3)">Chargement...</div>`;
       try { _worldResources = await api.getWorldResources(WORLD_ID); } catch (err) { _worldResources = []; console.warn('[WorldHub] getWorldResources failed:', err.message); }
     }
     container.innerHTML = worldResourcesTabHTML(_worldResources);
@@ -344,12 +462,19 @@ async function render(){
   _world = world;
   _worldPosts = posts;
   _isMember = isMember;
-  try {
-    const [role, profile] = await Promise.all([api.getWorldRole(WORLD_ID), api.getCurrentProfile()]);
-    _myRole = role;
-    _meId = profile?.id || null;
-  } catch (err) { console.warn('[WorldHub] role/profile hydration failed:', err.message); }
-  initLayout({ active: WORLD_ID, mainHTML: mainWorld(_world), rail: worldRail(_world) });
+
+  const [roleRes, profileRes, membersRes, resourcesRes] = await Promise.allSettled([
+    api.getWorldRole(WORLD_ID),
+    api.getCurrentProfile(),
+    api.getWorldMembers(WORLD_ID),
+    api.getWorldResources(WORLD_ID),
+  ]);
+  _myRole = roleRes.status === 'fulfilled' ? roleRes.value : null;
+  _meId = profileRes.status === 'fulfilled' ? (profileRes.value?.id || null) : null;
+  _worldMembers = membersRes.status === 'fulfilled' ? membersRes.value : [];
+  _worldResources = resourcesRes.status === 'fulfilled' ? resourcesRes.value : [];
+
+  initLayout({ active: WORLD_ID, mainHTML: mainWorld(_world), rail: worldRail(_world, _worldMembers, _worldResources) });
 }
 render();
 </script>
