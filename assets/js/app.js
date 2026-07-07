@@ -27,10 +27,21 @@ const NAV = [
   { id:'plus',        icon:'⋯', label:'Plus',            href:'#' },
 ];
 
-/* ── Mock data (used as fallback when Supabase is not connected) ── */
+/* ── Mock data (used as fallback when Supabase is not connected) ──
+   Issue: cet objet contenait de faux utilisateurs "démo" (Alex Dev,
+   Sarah Parker, John Doe, John Smith, Mike Wilson, Emma Davis, des
+   vendeurs de la marketplace...) qui apparaissaient partout dans
+   l'interface (fil d'actualité, top membres, notifications, reels,
+   marketplace) même quand Supabase était connecté avec de vrais
+   comptes. Tous les faux profils ont été retirés : `user` est
+   désormais un profil "invité" neutre et générique (pas une personne
+   inventée), et les listes qui contenaient des personnes fictives
+   (posts, topMembers, notifications, reels, listings) sont vides —
+   l'app affiche un vrai état vide ("Aucune publication", etc.) au
+   lieu d'inventer du contenu attribué à des gens qui n'existent pas. */
 const MOCK = {
-  user: { name:'Alex Dev', handle:'@alex.dev', avatar:'https://i.pravatar.cc/150?img=13',
-          bio:'Développeur Full Stack · Passionné d\'IA et le Web', posts:152, followers:'12.4k', following:280 },
+  user: { name:'Invité', handle:'@invite', avatar:'https://ui-avatars.com/api/?name=?&background=2a2a3a&color=9a97ad&size=150',
+          bio:'', posts:0, followers:0, following:0 },
 
   worlds: [
     { id:'programming', icon:'💻', color:'green',  name:'Programmation',        members:'12.3k' },
@@ -43,28 +54,11 @@ const MOCK = {
     { id:'gaming',       icon:'🎮', color:'yellow', name:'Gaming',               members:'9.1k' },
   ],
 
-  posts: [
-    { id:1, author:'Sarah Parker', handle:'@sarah.parker', time:'il y a 2h', world:'Programmation',
-      text:'Quelques conseils pour améliorer vos compétences en JavaScript en 2024 🚀',
-      code:`<span class="kw">const</span> developer = {\n  name: <span class="str">'JavaScript'</span>,\n  focus: <span class="str">'Web Development'</span>,\n  keepLearning: <span class="kw">true</span>\n};`,
-      likes:138, comments:15, shares:6 },
-    { id:2, author:'Alex Dev', handle:'@alex.dev', time:'il y a 5h', world:'IA & ML',
-      text:'L\'avenir de l\'IA entre nos mains. Continuons à construire !',
-      highlight:true,
-      likes:246, comments:56, shares:23 },
-    { id:3, author:'John Doe', handle:'@johndoe', time:'il y a 3h', world:'Programmation',
-      text:'Astuce JavaScript : utilisez la déstructuration pour un code plus propre !',
-      code:`<span class="kw">const</span> user = {\n  name: <span class="str">'John Doe'</span>,\n  age: 30,\n  skills: [<span class="str">'React'</span>, <span class="str">'Node.js'</span>]\n};\n\n<span class="kw">const</span> { name, age, skills } = user;`,
-      likes:90, comments:24, shares:12 },
-  ],
+  posts: [],
 
   trending: ['#JavaScript','#Flutter','#AI','#RemoteDev','#WebDesign'],
 
-  topMembers: [
-    { name:'Alex Dev',    meta:'12.4k pts', avatar:'https://i.pravatar.cc/80?img=13' },
-    { name:'Sarah Parker',meta:'8.7k pts',  avatar:'https://i.pravatar.cc/80?img=5' },
-    { name:'John Smith',  meta:'6.3k pts',  avatar:'https://i.pravatar.cc/80?img=32' },
-  ],
+  topMembers: [],
 
   events: [
     { day:'15', mon:'JUIN', title:'Flutter World Conference', place:'En ligne', desc:'La plus grande conférence Flutter de l\'année avec des experts du monde entier.', going:'1.2k participants' },
@@ -72,16 +66,7 @@ const MOCK = {
     { day:'05', mon:'JUIL', title:'Web Dev Bootcamp', place:'Lyon, France', desc:'Bootcamp intensif sur les technologies web modernes.', going:'150 participants' },
   ],
 
-  notifications: [
-    { id:'m1', type:'like',    icon:'❤️', color:'pink',   text:'Sarah Parker a aimé votre publication',              time:'il y a 5 min', unread:true },
-    { id:'m2', type:'comment', icon:'💬', color:'blue',   text:'John Smith a commenté votre publication',            time:'il y a 20 min', unread:true },
-    { id:'m3', type:'mention', icon:'📣', color:'accent', text:'Alex Johnson vous a mentionné dans un commentaire',   time:'il y a 1h', unread:true },
-    { id:'m4', type:'share',   icon:'🔄', color:'green',  text:'Votre publication a été partagée 5 fois',             time:'il y a 2h', unread:true },
-    { id:'m5', type:'system',  icon:'🌍', color:'yellow', text:'Nouveau membre dans le monde Programmation',          time:'il y a 3h', unread:true },
-    { id:'m6', type:'follow',  icon:'➕', color:'accent', text:'Mike Wilson a commencé à vous suivre',                time:'il y a 4h', unread:true },
-    { id:'m7', type:'comment', icon:'💬', color:'blue',   text:'Emma Davis a répondu à votre commentaire',            time:'il y a 6h', unread:false },
-    { id:'m8', type:'system',  icon:'🔥', color:'pink',   text:'Votre contenu est tendance',                          time:'il y a 1j', unread:false },
-  ],
+  notifications: [],
 
   jobs: [
     { title:'Développeur Frontend React', company:'NovaTech', place:'Remote', type:'CDI', tag:'Programmation', posted:'il y a 2j' },
@@ -97,29 +82,13 @@ const MOCK = {
     { name:'Lumen Ventures',  followers:'6.1k',  openJobs:2,  sector:'Startup Studio' },
   ],
 
-  /* Fallback reels used only when Supabase isn't connected — public
-     domain / royalty-free sample clips so the page isn't empty. */
-  reels: [
-    { id:'r1', author:'Sarah Parker', handle:'@sarah.parker', avatarUrl:'https://i.pravatar.cc/80?img=5',
-      caption:'Petite démo de mon setup de code la nuit 💻🌙 #Programmation', world:'programming', time:'il y a 3h',
-      videoUrl:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4', thumbnailUrl:null,
-      views:12400, likes:834, comments:2, commentList:[] },
-    { id:'r2', author:'Alex Dev', handle:'@alex.dev', avatarUrl:'https://i.pravatar.cc/80?img=13',
-      caption:'3 astuces CSS que peu de devs connaissent 🎨', world:'design', time:'il y a 6h',
-      videoUrl:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4', thumbnailUrl:null,
-      views:8900, likes:512, comments:0, commentList:[] },
-    { id:'r3', author:'John Doe', handle:'@johndoe', avatarUrl:'https://i.pravatar.cc/80?img=32',
-      caption:'Un weekend hackathon inoubliable 🚀 #IA', world:'ai', time:'il y a 1j',
-      videoUrl:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/coffee.mp4', thumbnailUrl:null,
-      views:22100, likes:1830, comments:5, commentList:[] },
-  ],
+  /* Fallback reels used only when Supabase isn't connected. Previously
+     seeded with fake authors (Sarah Parker, Alex Dev, John Doe) —
+     left empty so the page shows a real "no reels yet" state instead
+     of content attributed to people who don't exist. */
+  reels: [],
 
-  listings: [
-    { title:'Développement site vitrine', seller:'Yasmine K.', price:'250€', rating:4.9, tag:'Web' },
-    { title:'Identité visuelle complète', seller:'Karim D.', price:'180€', rating:5.0, tag:'Design' },
-    { title:'Script d\'automatisation Python', seller:'Léa M.', price:'90€', rating:4.8, tag:'Programmation' },
-    { title:'Montage vidéo Reels', seller:'Tom B.', price:'60€', rating:4.7, tag:'Vidéo' },
-  ],
+  listings: [],
 };
 
 const COLOR_VARS = { green:'var(--green)', blue:'var(--blue)', pink:'var(--pink)', yellow:'var(--yellow)', accent:'var(--accent)' };
@@ -1487,7 +1456,7 @@ const api = {
     return {
       posts: MOCK.posts.filter(p => p.text.toLowerCase().includes(q))
         .map(p => ({ id:p.id, author:p.author, avatarUrl:null, text:p.text, time:p.time })),
-      profiles: [MOCK.user, ...MOCK.topMembers.map(m=>({name:m.name, handle:'@'+m.name.toLowerCase().replace(' ','.'), avatar:m.avatar}))]
+      profiles: MOCK.topMembers.map(m=>({name:m.name, handle:'@'+m.name.toLowerCase().replace(' ','.'), avatar:m.avatar}))
         .filter(u => (u.name||'').toLowerCase().includes(q) || (u.handle||'').toLowerCase().includes(q)),
       worlds: MOCK.worlds.filter(w => w.name.toLowerCase().includes(q)),
       companies: MOCK.companies.filter(c => c.name.toLowerCase().includes(q))
