@@ -15,24 +15,20 @@
 <script src="assets/js/auth-guard.js"></script>
 <script src="assets/js/app.js"></script>
 <script>
-(async function() {
-  const _session = await requireAuth();
-  if (!_session) return;
-
-  /* Issue: the world_id sent to api.createPost() was hardcoded to `null`,
-     no matter what the user picked in the "Partager dans" dropdown — so
-     every post came out with world_id = null. It showed up in the global
-     feed (index.html) and on the profile (neither filters by world), but
-     never inside the world's own page (world.html filters posts with
-     .eq('world_id', worldId)). Fixed by: giving the <select> a real id,
-     using the *real* world id as each <option>'s value (was just the
-     display name, with no `id` attribute at all before), populating it
-     from api.getWorlds() (was static MOCK.worlds, so user-created worlds
-     never even appeared as an option), and actually reading the selected
-     value in handlePublish() instead of passing null. */
-  const _preselectedWorldId = new URLSearchParams(location.search).get('world') || '';
-  let _worlds = [];
-  try { _worlds = await api.getWorlds(); } catch (err) { _worlds = MOCK.worlds; }
+/* Issue: every function the HTML calls via onclick/onchange
+   (mainCreate, handlePublish, handleImageSelect, togglePoll, ...) was
+   declared *inside* `(async function(){ ... })()`. Functions declared
+   inside another function are only visible in that function's own
+   scope — inline HTML attribute handlers like onclick="handlePublish()"
+   only ever look up the *global* (window) scope, so every single one of
+   those calls threw "X is not defined" the moment it was clicked. None
+   of the buttons on this page (Publier, Image, Vidéo, Sondage, Assistant
+   IA) ever actually worked. Fix: declare all of these at the top level
+   of the script (so they attach to `window` normally) and keep only the
+   requireAuth() gate + initial data fetch + initLayout() call wrapped in
+   a small async function at the very end. */
+let _worlds = [];
+const _preselectedWorldId = new URLSearchParams(location.search).get('world') || '';
 
 function previewCard(){
   return `
@@ -279,8 +275,12 @@ async function handlePublish(){
     btn.textContent = 'Publier';
   }
 }
-initLayout({ active:'create', mainHTML: mainCreate(), rail: previewCard() });
 
+(async function init(){
+  const _session = await requireAuth();
+  if (!_session) return;
+  try { _worlds = await api.getWorlds(); } catch (err) { _worlds = MOCK.worlds; }
+  initLayout({ active:'create', mainHTML: mainCreate(), rail: previewCard() });
 })();
 </script>
 </body>
