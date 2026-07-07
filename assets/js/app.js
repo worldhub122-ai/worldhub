@@ -18,30 +18,19 @@ const NAV = [
   { id:'ai',           icon:'🤖', label:'IA & ML',         href:'world.html?id=ai', accent:'blue' },
   { id:'design',       icon:'🎨', label:'Design',          href:'world.html?id=design', accent:'pink' },
   { id:'entrepreneur', icon:'💼', label:'Entrepreneuriat', href:'world.html?id=entrepreneur', accent:'yellow' },
-  { id:'worlds',       icon:'🧭', label:'Explorer les Mondes', href:'worlds.html' },
   { id:'div2' },
   { id:'jobs',        icon:'🧰', label:'Offres d\'emploi', href:'jobs.html' },
   { id:'companies',   icon:'🏢', label:'Entreprises',     href:'companies.html' },
   { id:'events',      icon:'📅', label:'Événements',      href:'events.html' },
   { id:'marketplace', icon:'🛒', label:'Marketplace',     href:'marketplace.html' },
+  { id:'pricing',     icon:'💎', label:'Abonnement',      href:'pricing.html' },
   { id:'plus',        icon:'⋯', label:'Plus',            href:'#' },
 ];
 
-/* ── Mock data (used as fallback when Supabase is not connected) ──
-   Issue: cet objet contenait de faux utilisateurs "démo" (Alex Dev,
-   Sarah Parker, John Doe, John Smith, Mike Wilson, Emma Davis, des
-   vendeurs de la marketplace...) qui apparaissaient partout dans
-   l'interface (fil d'actualité, top membres, notifications, reels,
-   marketplace) même quand Supabase était connecté avec de vrais
-   comptes. Tous les faux profils ont été retirés : `user` est
-   désormais un profil "invité" neutre et générique (pas une personne
-   inventée), et les listes qui contenaient des personnes fictives
-   (posts, topMembers, notifications, reels, listings) sont vides —
-   l'app affiche un vrai état vide ("Aucune publication", etc.) au
-   lieu d'inventer du contenu attribué à des gens qui n'existent pas. */
+/* ── Mock data (used as fallback when Supabase is not connected) ── */
 const MOCK = {
-  user: { name:'Invité', handle:'@invite', avatar:'https://ui-avatars.com/api/?name=?&background=2a2a3a&color=9a97ad&size=150',
-          bio:'', posts:0, followers:0, following:0 },
+  user: { name:'Alex Dev', handle:'@alex.dev', avatar:'https://i.pravatar.cc/150?img=13',
+          bio:'Développeur Full Stack · Passionné d\'IA et le Web', posts:152, followers:'12.4k', following:280 },
 
   worlds: [
     { id:'programming', icon:'💻', color:'green',  name:'Programmation',        members:'12.3k' },
@@ -54,11 +43,28 @@ const MOCK = {
     { id:'gaming',       icon:'🎮', color:'yellow', name:'Gaming',               members:'9.1k' },
   ],
 
-  posts: [],
+  posts: [
+    { id:1, author:'Sarah Parker', handle:'@sarah.parker', time:'il y a 2h', world:'Programmation',
+      text:'Quelques conseils pour améliorer vos compétences en JavaScript en 2024 🚀',
+      code:`<span class="kw">const</span> developer = {\n  name: <span class="str">'JavaScript'</span>,\n  focus: <span class="str">'Web Development'</span>,\n  keepLearning: <span class="kw">true</span>\n};`,
+      likes:138, comments:15, shares:6 },
+    { id:2, author:'Alex Dev', handle:'@alex.dev', time:'il y a 5h', world:'IA & ML',
+      text:'L\'avenir de l\'IA entre nos mains. Continuons à construire !',
+      highlight:true,
+      likes:246, comments:56, shares:23 },
+    { id:3, author:'John Doe', handle:'@johndoe', time:'il y a 3h', world:'Programmation',
+      text:'Astuce JavaScript : utilisez la déstructuration pour un code plus propre !',
+      code:`<span class="kw">const</span> user = {\n  name: <span class="str">'John Doe'</span>,\n  age: 30,\n  skills: [<span class="str">'React'</span>, <span class="str">'Node.js'</span>]\n};\n\n<span class="kw">const</span> { name, age, skills } = user;`,
+      likes:90, comments:24, shares:12 },
+  ],
 
   trending: ['#JavaScript','#Flutter','#AI','#RemoteDev','#WebDesign'],
 
-  topMembers: [],
+  topMembers: [
+    { name:'Alex Dev',    meta:'12.4k pts', avatar:'https://i.pravatar.cc/80?img=13' },
+    { name:'Sarah Parker',meta:'8.7k pts',  avatar:'https://i.pravatar.cc/80?img=5' },
+    { name:'John Smith',  meta:'6.3k pts',  avatar:'https://i.pravatar.cc/80?img=32' },
+  ],
 
   events: [
     { day:'15', mon:'JUIN', title:'Flutter World Conference', place:'En ligne', desc:'La plus grande conférence Flutter de l\'année avec des experts du monde entier.', going:'1.2k participants' },
@@ -66,7 +72,16 @@ const MOCK = {
     { day:'05', mon:'JUIL', title:'Web Dev Bootcamp', place:'Lyon, France', desc:'Bootcamp intensif sur les technologies web modernes.', going:'150 participants' },
   ],
 
-  notifications: [],
+  notifications: [
+    { id:'m1', type:'like',    icon:'❤️', color:'pink',   text:'Sarah Parker a aimé votre publication',              time:'il y a 5 min', unread:true },
+    { id:'m2', type:'comment', icon:'💬', color:'blue',   text:'John Smith a commenté votre publication',            time:'il y a 20 min', unread:true },
+    { id:'m3', type:'mention', icon:'📣', color:'accent', text:'Alex Johnson vous a mentionné dans un commentaire',   time:'il y a 1h', unread:true },
+    { id:'m4', type:'share',   icon:'🔄', color:'green',  text:'Votre publication a été partagée 5 fois',             time:'il y a 2h', unread:true },
+    { id:'m5', type:'system',  icon:'🌍', color:'yellow', text:'Nouveau membre dans le monde Programmation',          time:'il y a 3h', unread:true },
+    { id:'m6', type:'follow',  icon:'➕', color:'accent', text:'Mike Wilson a commencé à vous suivre',                time:'il y a 4h', unread:true },
+    { id:'m7', type:'comment', icon:'💬', color:'blue',   text:'Emma Davis a répondu à votre commentaire',            time:'il y a 6h', unread:false },
+    { id:'m8', type:'system',  icon:'🔥', color:'pink',   text:'Votre contenu est tendance',                          time:'il y a 1j', unread:false },
+  ],
 
   jobs: [
     { title:'Développeur Frontend React', company:'NovaTech', place:'Remote', type:'CDI', tag:'Programmation', posted:'il y a 2j' },
@@ -82,13 +97,42 @@ const MOCK = {
     { name:'Lumen Ventures',  followers:'6.1k',  openJobs:2,  sector:'Startup Studio' },
   ],
 
-  /* Fallback reels used only when Supabase isn't connected. Previously
-     seeded with fake authors (Sarah Parker, Alex Dev, John Doe) —
-     left empty so the page shows a real "no reels yet" state instead
-     of content attributed to people who don't exist. */
-  reels: [],
+  /* Fallback reels used only when Supabase isn't connected — public
+     domain / royalty-free sample clips so the page isn't empty. */
+  reels: [
+    { id:'r1', author:'Sarah Parker', handle:'@sarah.parker', avatarUrl:'https://i.pravatar.cc/80?img=5',
+      caption:'Petite démo de mon setup de code la nuit 💻🌙 #Programmation', world:'programming', time:'il y a 3h',
+      videoUrl:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4', thumbnailUrl:null,
+      views:12400, likes:834, comments:2, commentList:[] },
+    { id:'r2', author:'Alex Dev', handle:'@alex.dev', avatarUrl:'https://i.pravatar.cc/80?img=13',
+      caption:'3 astuces CSS que peu de devs connaissent 🎨', world:'design', time:'il y a 6h',
+      videoUrl:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4', thumbnailUrl:null,
+      views:8900, likes:512, comments:0, commentList:[] },
+    { id:'r3', author:'John Doe', handle:'@johndoe', avatarUrl:'https://i.pravatar.cc/80?img=32',
+      caption:'Un weekend hackathon inoubliable 🚀 #IA', world:'ai', time:'il y a 1j',
+      videoUrl:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/coffee.mp4', thumbnailUrl:null,
+      views:22100, likes:1830, comments:5, commentList:[] },
+  ],
 
-  listings: [],
+  /* Fallback plans/subscription used only when Supabase isn't connected
+     (or the subscriptions tables don't exist yet) — keeps pricing.html
+     usable in demo mode instead of showing an empty page. */
+  plans: [
+    { id:'free', name:'Gratuit', description:'Pour découvrir WorldHub.', price_cents:0, currency:'EUR', billing_interval:'free',
+      features:['Publications illimitées','Jusqu\u2019à 5 Mondes rejoints','Messagerie de base'] },
+    { id:'pro', name:'Pro', description:'Pour les créateurs actifs.', price_cents:999, currency:'EUR', billing_interval:'month',
+      features:['Tout le plan Gratuit','Mondes illimités','Badge Pro sur le profil','Statistiques avancées du tableau de bord','Support prioritaire'] },
+    { id:'business', name:'Business', description:'Pour les entreprises et recruteurs.', price_cents:2999, currency:'EUR', billing_interval:'month',
+      features:['Tout le plan Pro','Offres d\u2019emploi illimitées','Page entreprise vérifiée','Accès API (à venir)'] },
+  ],
+  mySubscription: { plan_id:'free', status:'active', cancel_at_period_end:false, current_period_end:null },
+
+  listings: [
+    { title:'Développement site vitrine', seller:'Yasmine K.', price:'250€', rating:4.9, tag:'Web' },
+    { title:'Identité visuelle complète', seller:'Karim D.', price:'180€', rating:5.0, tag:'Design' },
+    { title:'Script d\'automatisation Python', seller:'Léa M.', price:'90€', rating:4.8, tag:'Programmation' },
+    { title:'Montage vidéo Reels', seller:'Tom B.', price:'60€', rating:4.7, tag:'Vidéo' },
+  ],
 };
 
 const COLOR_VARS = { green:'var(--green)', blue:'var(--blue)', pink:'var(--pink)', yellow:'var(--yellow)', accent:'var(--accent)' };
@@ -348,12 +392,12 @@ function renderSidebar(active){
 /* ---------------- RIGHT RAIL ---------------- */
 function railWorlds(){
   return `<div class="card">
-    <div class="card-head"><h3>Découvrir des Mondes</h3><span class="link" onclick="location.href='worlds.html'">Voir tout</span></div>
+    <div class="card-head"><h3>Découvrir des Mondes</h3><span class="link">Voir tout</span></div>
     ${MOCK.worlds.slice(0,4).map(w=>`
       <div class="row" style="cursor:pointer" onclick="location.href='world.html?id=${encodeURIComponent(w.id)}'">
         ${tile(w.icon,w.color)}
         <div><div class="row-title">${w.name}</div><div class="row-sub">${w.members} membres</div></div>
-        <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="event.stopPropagation();location.href='world.html?id=${encodeURIComponent(w.id)}'">Voir</button>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="event.stopPropagation();location.href='world.html?id=${encodeURIComponent(w.id)}'">Rejoindre</button>
       </div>`).join('')}
   </div>`;
 }
@@ -741,7 +785,6 @@ const api = {
           return rows.map(w => ({
             id: w.id, icon: w.icon || '🌍', color: w.color || 'accent',
             name: w.name, members: w.member_count != null ? String(w.member_count) : '',
-            description: w.description || '', createdBy: w.created_by || null,
           }));
         }
       } catch (err) {
@@ -752,130 +795,12 @@ const api = {
   },
 
   /* ── Single world (by id/slug) ── used by world.html to know which
-     world it's rendering (name, icon, member count, description).
-     Issue: this used to reuse getWorlds()'s mapped shape, which never
-     carried `description`/`createdBy` — world.html always showed the
-     generic placeholder text instead of the real description. ── */
+     world it's rendering (name, icon, member count, description). ── */
   async getWorld(worldId) {
     const worlds = await this.getWorlds();
     const found = worlds.find(w => String(w.id) === String(worldId));
     if (found) return found;
     return MOCK.worlds.find(w => w.id === worldId) || MOCK.worlds[0];
-  },
-
-  /* ── Create a brand-new world (Issue: no UI/API existed at all to
-     create a world — the sidebar only ever showed 4 hardcoded ones). ── */
-  async createWorld({ id, name, icon, color, description }) {
-    if (typeof DB !== 'undefined' && DB.isConnected) {
-      return DB.createWorld({ id, name, icon, color, description });
-    }
-    console.log('createWorld->mock', id, name);
-    const w = { id, name, icon: icon || '🌍', color: color || 'accent', description: description || '', members: '0' };
-    MOCK.worlds.push(w);
-    return w;
-  },
-
-  /* ── Edit a world's name/icon/color/description (owner/admin only —
-     enforced server-side by RLS; the button is also hidden client-side
-     for non-admins). ── */
-  async updateWorld(worldId, patch) {
-    if (typeof DB !== 'undefined' && DB.isConnected) return DB.updateWorld(worldId, patch);
-    console.log('updateWorld->mock', worldId, patch);
-    const w = MOCK.worlds.find(w => w.id === worldId);
-    if (w) Object.assign(w, patch);
-    return w;
-  },
-
-  /* ── Delete a world (owner only). ── */
-  async deleteWorld(worldId) {
-    if (typeof DB !== 'undefined' && DB.isConnected) { await DB.deleteWorld(worldId); return true; }
-    console.log('deleteWorld->mock', worldId);
-    MOCK.worlds = MOCK.worlds.filter(w => w.id !== worldId);
-    return true;
-  },
-
-  /* ── Current user's role in a world: 'owner' | 'admin' | 'member' | null.
-     Used to decide whether to show "⚙️ Gérer" / member-management controls. ── */
-  async getWorldRole(worldId) {
-    if (typeof DB !== 'undefined' && DB.isConnected) {
-      try { return await DB.getMyWorldRole(worldId); } catch (err) { console.warn('[WorldHub] getWorldRole failed:', err.message); }
-    }
-    return null;
-  },
-
-  /* ── Member list for the "Membres" tab, with role badges. ── */
-  async getWorldMembers(worldId) {
-    if (typeof DB !== 'undefined' && DB.isConnected) {
-      try {
-        const rows = await DB.getWorldMembers(worldId);
-        return rows.map(r => ({
-          id: r.profile?.id || r.user_id,
-          name: r.profile ? (r.profile.first_name + ' ' + (r.profile.last_name || '')).trim() : 'Utilisateur',
-          handle: r.profile?.handle || '',
-          avatar: r.profile?.avatar_url || `https://i.pravatar.cc/80?u=${r.user_id}`,
-          role: r.role,
-        }));
-      } catch (err) { console.warn('[WorldHub] getWorldMembers failed:', err.message); }
-    }
-    return [];
-  },
-  async setWorldMemberRole(worldId, userId, role) {
-    if (typeof DB !== 'undefined' && DB.isConnected) return DB.updateWorldMemberRole(worldId, userId, role);
-    console.log('setWorldMemberRole->mock', worldId, userId, role);
-    return true;
-  },
-  async removeWorldMember(worldId, userId) {
-    if (typeof DB !== 'undefined' && DB.isConnected) return DB.removeWorldMember(worldId, userId);
-    console.log('removeWorldMember->mock', worldId, userId);
-    return true;
-  },
-
-  /* ── Invite a user (by profile id) to a world — creates a real
-     notification for them (Issue: no invite mechanism existed). ── */
-  async inviteToWorld(worldId, invitedUserId) {
-    if (typeof DB !== 'undefined' && DB.isConnected) return DB.inviteToWorld(worldId, invitedUserId);
-    console.log('inviteToWorld->mock', worldId, invitedUserId);
-    return true;
-  },
-
-  /* ── Resources tab ── */
-  async getWorldResources(worldId) {
-    if (typeof DB !== 'undefined' && DB.isConnected) {
-      try {
-        const rows = await DB.listWorldResources(worldId);
-        return rows.map(r => ({
-          id: r.id, title: r.title, url: r.url, type: r.resource_type,
-          addedBy: r.added_by ? (r.added_by.first_name + ' ' + (r.added_by.last_name || '')).trim() : 'Utilisateur',
-        }));
-      } catch (err) { console.warn('[WorldHub] getWorldResources failed:', err.message); }
-    }
-    return [];
-  },
-  async addWorldResource(worldId, { title, url, resourceType }) {
-    if (typeof DB !== 'undefined' && DB.isConnected) return DB.addWorldResource(worldId, { title, url, resourceType });
-    console.log('addWorldResource->mock', worldId, title, url);
-    return { id: 'mock-' + Date.now(), title, url, type: resourceType || 'link', addedBy: MOCK.user.name };
-  },
-  async deleteWorldResource(resourceId) {
-    if (typeof DB !== 'undefined' && DB.isConnected) return DB.deleteWorldResource(resourceId);
-    console.log('deleteWorldResource->mock', resourceId);
-    return true;
-  },
-
-  /* ── Search scoped to a single world's posts (Issue: no way to search
-     inside a world — only the global topbar search existed). ── */
-  async searchInWorld(worldId, query) {
-    if (typeof DB !== 'undefined' && DB.isConnected) {
-      try {
-        const rows = await DB.searchWorldPosts(worldId, query);
-        const mapped = rows.map(_mapPostRow);
-        await _hydrateRepostStats(mapped);
-        return mapped;
-      } catch (err) { console.warn('[WorldHub] searchInWorld failed:', err.message); }
-    }
-    const q = (query || '').toLowerCase();
-    const world = MOCK.worlds.find(w => w.id === worldId);
-    return MOCK.posts.filter(p => p.world === (world ? world.name : worldId) && p.text.toLowerCase().includes(q));
   },
 
   /* ── Posts scoped to a single world ── */
@@ -1307,10 +1232,10 @@ const api = {
   },
 
   /* ── Events ── */
-  async getEvents(worldId = null) {
+  async getEvents() {
     if (typeof DB !== 'undefined' && DB.isConnected) {
       try {
-        const rows = await DB.listEvents({ worldId });
+        const rows = await DB.listEvents();
         return rows.map(e => {
           const d = new Date(e.starts_at);
           return {
@@ -1323,7 +1248,7 @@ const api = {
         });
       } catch (err) { console.warn('[WorldHub] getEvents fell back to mock:', err.message); }
     }
-    return worldId ? [] : MOCK.events;
+    return MOCK.events;
   },
   async rsvpEvent(eventId) {
     if (typeof DB !== 'undefined' && DB.isConnected) return DB.rsvpEvent(eventId, 'going');
@@ -1425,6 +1350,52 @@ const api = {
     return null; // pas de suivi de vues en mode démo
   },
 
+  /* ── Subscriptions / Billing (Issue: aucune page de tarification ni
+     état d'abonnement n'existait). Aucun fournisseur de paiement n'est
+     branché — seul le plan Gratuit est activable en libre-service.
+     requestCheckout() renvoie une erreur explicite pour les plans payants
+     tant qu'une Edge Function de paiement n'est pas déployée, plutôt que
+     de faire semblant d'activer un plan qui n'a pas été payé. ── */
+  async getPlans() {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try { return await DB.listPlans(); } catch (err) { console.warn('[WorldHub] getPlans fell back to mock:', err.message); }
+    }
+    return MOCK.plans;
+  },
+  async getMySubscription() {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try {
+        const sub = await DB.getMySubscription();
+        return sub || { plan_id:'free', status:'active', cancel_at_period_end:false, current_period_end:null };
+      } catch (err) { console.warn('[WorldHub] getMySubscription fell back to mock:', err.message); }
+    }
+    return MOCK.mySubscription;
+  },
+  async subscribeFreePlan() {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.subscribeToFreePlan('free');
+    console.log('subscribeFreePlan->mock');
+    MOCK.mySubscription = { plan_id:'free', status:'active', cancel_at_period_end:false, current_period_end:null };
+    return MOCK.mySubscription;
+  },
+  async cancelSubscription() {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.cancelSubscription();
+    console.log('cancelSubscription->mock');
+    MOCK.mySubscription.cancel_at_period_end = true;
+    return MOCK.mySubscription;
+  },
+  async getBillingHistory() {
+    if (typeof DB !== 'undefined' && DB.isConnected) {
+      try { return await DB.listBillingHistory(); } catch (err) { console.warn('[WorldHub] getBillingHistory failed:', err.message); }
+    }
+    return [];
+  },
+  /* Toujours rejetée pour l'instant (aucun fournisseur configuré) —
+     voir DB.requestCheckout() pour le message + les instructions. */
+  async requestCheckout(planId, provider) {
+    if (typeof DB !== 'undefined' && DB.isConnected) return DB.requestCheckout(planId, provider);
+    throw new Error(`Le paiement n'est pas encore configuré (mode démo). Connectez Supabase et déployez une Edge Function de paiement pour le fournisseur "${provider}".`);
+  },
+
   /* ── Search (Issue: the topbar search box did nothing at all — no
      query reached the DB, no results page existed). Real search hits
      posts/profiles/worlds/companies/jobs via DB.searchAll(); mock mode
@@ -1456,7 +1427,7 @@ const api = {
     return {
       posts: MOCK.posts.filter(p => p.text.toLowerCase().includes(q))
         .map(p => ({ id:p.id, author:p.author, avatarUrl:null, text:p.text, time:p.time })),
-      profiles: MOCK.topMembers.map(m=>({name:m.name, handle:'@'+m.name.toLowerCase().replace(' ','.'), avatar:m.avatar}))
+      profiles: [MOCK.user, ...MOCK.topMembers.map(m=>({name:m.name, handle:'@'+m.name.toLowerCase().replace(' ','.'), avatar:m.avatar}))]
         .filter(u => (u.name||'').toLowerCase().includes(q) || (u.handle||'').toLowerCase().includes(q)),
       worlds: MOCK.worlds.filter(w => w.name.toLowerCase().includes(q)),
       companies: MOCK.companies.filter(c => c.name.toLowerCase().includes(q))
@@ -1575,11 +1546,11 @@ const api = {
 /* ── Notification display helpers (map DB `type` -> icon/color/text) ── */
 function _notifIcon(type){
   return { like:'❤️', comment:'💬', follow:'➕', mention:'📣', share:'🔄', repost:'🔁', system:'🌍',
-    reel_like:'❤️', reel_comment:'💬', world_invite:'🌐' }[type] || '🔔';
+    reel_like:'❤️', reel_comment:'💬' }[type] || '🔔';
 }
 function _notifColor(type){
   return { like:'pink', comment:'blue', follow:'accent', mention:'accent', share:'green', repost:'green', system:'yellow',
-    reel_like:'pink', reel_comment:'blue', world_invite:'blue' }[type] || 'accent';
+    reel_like:'pink', reel_comment:'blue' }[type] || 'accent';
 }
 function _notifDefaultText(n){
   const who = n.actor ? (n.actor.first_name + ' ' + (n.actor.last_name || '')).trim() : 'Quelqu\'un';
@@ -1588,7 +1559,6 @@ function _notifDefaultText(n){
     follow:'a commencé à vous suivre', mention:'vous a mentionné',
     share:'a partagé votre publication', repost:'a republié votre publication',
     reel_like:'a aimé votre Reel', reel_comment:'a commenté votre Reel',
-    world_invite:'vous invite à rejoindre un monde',
   };
   return `${escapeHtml(who)} ${map[n.type] || 'a interagi avec votre contenu'}`;
 }
