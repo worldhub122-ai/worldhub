@@ -21,6 +21,14 @@ const WORLD_ID = new URLSearchParams(location.search).get('id') || 'programming'
 
 let _world = null;
 let _isMember = false;
+let _myRole = null;      // 'owner' | 'admin' | 'member' | null
+let _meId = null;
+let _worldPosts = [];
+let _worldMembers = null;    // lazy-loaded on first "Membres" tab click
+let _worldEvents = null;     // lazy-loaded on first "Événements" tab click
+let _worldResources = null;  // lazy-loaded on first "Ressources" tab click
+const ROLE_LABEL = { owner:'Propriétaire', admin:'Admin', member:'Membre' };
+const RESOURCE_ICON = { link:'🔗', video:'🎬', article:'📄', doc:'📚' };
 
 function worldRail(world){
   return `
@@ -135,7 +143,175 @@ async function handleJoinWorld(btn){
   }
 }
 
-function mainWorld(world, posts){
+/* ── Tab content builders ─────────────────────────────────────
+   Issue: the 4 tabs (Publications/Membres/Événements/Ressources)
+   were plain <div class="tab"> with no onclick at all — clicking
+   them did nothing, and only "Publications" ever had real content.
+   api.getWorldMembers()/api.getEvents()/api.getWorldResources() all
+   already existed and worked, they just had nowhere to render. ── */
+function worldPostsTabHTML(posts){
+  return `
+    <div class="composer">
+      <div class="composer-top">
+        <img class="avatar" src="${MOCK.user.avatar}" style="width:38px;height:38px">
+        <div class="fake-input" onclick="location.href='create-post.html?world=${encodeURIComponent(WORLD_ID)}'">Quoi de neuf dans ${escapeHtml(_world.name)} ?</div>
+      </div>
+      <div class="composer-actions">
+        <div class="chip blue" onclick="location.href='create-post.html?world=${encodeURIComponent(WORLD_ID)}'">🖼️ Image</div><div class="chip" onclick="location.href='create-post.html?world=${encodeURIComponent(WORLD_ID)}'">🎬 Vidéo</div><div class="chip green" onclick="location.href='create-post.html?world=${encodeURIComponent(WORLD_ID)}'">📊 Sondage</div>
+        <div class="spacer"></div><button class="btn btn-primary btn-sm" onclick="location.href='create-post.html?world=${encodeURIComponent(WORLD_ID)}'">Publier</button>
+      </div>
+    </div>
+    ${posts.length ? posts.map(worldPostCard).join('') : `<div class="card-pad" style="text-align:center;color:var(--text-3)">Aucune publication pour le moment dans ce monde.</div>`}`;
+}
+
+function worldMembersTabHTML(members){
+  if (!members.length) return `<div class="card-pad" style="text-align:center;color:var(--text-3)">Aucun membre pour le moment.</div>`;
+  return `<div class="card-pad" style="display:flex;flex-direction:column;gap:2px">
+    ${members.map(m=>{
+      const canManage = (_myRole === 'owner' || _myRole === 'admin') && m.role !== 'owner' && String(m.id) !== String(_meId);
+      return `
+      <div class="row" style="padding:10px 0;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="location.href='profile.html?id=${encodeURIComponent(m.id)}'">
+          <img class="avatar" src="${m.avatar}" style="width:38px;height:38px">
+          <div><div class="row-title">${escapeHtml(m.name)}</div><div class="row-sub">${escapeHtml(m.handle||'')}</div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="pill ${m.role==='owner'?'pill-accent':'pill-muted'}">${ROLE_LABEL[m.role]||m.role}</span>
+          ${canManage ? `<button class="btn btn-ghost btn-sm" onclick="handleRemoveMember('${m.id}')">Retirer</button>` : ''}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+async function handleRemoveMember(userId){
+  if (!confirm('Retirer ce membre du monde ?')) return;
+  try {
+    await api.removeWorldMember(WORLD_ID, userId);
+    _worldMembers = _worldMembers.filter(m => String(m.id) !== String(userId));
+    const container = document.getElementById('worldTabContent');
+    if (container) container.innerHTML = worldMembersTabHTML(_worldMembers);
+    showToast('Membre retiré ✓', 'success');
+  } catch (err) {
+    showError(err);
+  }
+}
+window.handleRemoveMember = handleRemoveMember;
+
+function worldEventsTabHTML(events){
+  return `
+  <div class="card-pad" style="display:flex;justify-content:flex-end;gap:10px">
+    <span class="link" style="font-size:13px;cursor:pointer" onclick="location.href='events.html?world=${encodeURIComponent(WORLD_ID)}'">Voir tout</span>
+    <button class="btn btn-primary btn-sm" onclick="location.href='events.html?world=${encodeURIComponent(WORLD_ID)}'">+ Créer un événement</button>
+  </div>
+  ${events.length ? events.map(e=>`
+    <div class="row" style="padding:12px 16px;align-items:flex-start;gap:14px">
+      <div class="tile" style="background:var(--accent-soft);color:var(--accent-2);flex-direction:column;font-weight:800;width:44px;height:44px;font-size:12px;line-height:1.1">${escapeHtml(e.day)}<span style="font-size:9px;font-weight:700">${escapeHtml(e.mon)}</span></div>
+      <div><div class="row-title">${escapeHtml(e.title)}</div><div class="row-sub">📍 ${escapeHtml(e.place)} · ${escapeHtml(e.going)}</div></div>
+    </div>`).join('') : `<div class="card-pad" style="text-align:center;color:var(--text-3)">Aucun événement pour le moment dans ce monde.</div>`}`;
+}
+
+function worldResourcesTabHTML(resources){
+  return `
+  <div class="card-pad" style="display:flex;justify-content:flex-end">
+    <button class="btn btn-primary btn-sm" onclick="openAddResourceModal()">+ Ajouter une ressource</button>
+  </div>
+  ${resources.length ? resources.map(r=>`
+    <div class="row" style="padding:10px 16px;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <a href="${r.url}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:10px;color:var(--text-1);text-decoration:none;flex:1;min-width:200px">
+        <span style="font-size:18px">${RESOURCE_ICON[r.type]||'🔗'}</span>
+        <div><div class="row-title">${escapeHtml(r.title)}</div><div class="row-sub">Ajouté par ${escapeHtml(r.addedBy)}</div></div>
+      </a>
+      ${(_myRole==='owner'||_myRole==='admin') ? `<button class="btn btn-ghost btn-sm" onclick="handleDeleteResource('${r.id}')">Supprimer</button>` : ''}
+    </div>`).join('') : `<div class="card-pad" style="text-align:center;color:var(--text-3)">Aucune ressource pour le moment.</div>`}`;
+}
+function openAddResourceModal(){
+  openModal(`
+    <h3 style="margin:0 0 16px">Ajouter une ressource</h3>
+    <div class="field"><label>Titre</label><input id="resTitle" placeholder="ex: Guide complet React"></div>
+    <div class="field"><label>URL</label><input id="resUrl" placeholder="https://..."></div>
+    <div class="field"><label>Type</label><select id="resType"><option value="link">Lien</option><option value="video">Vidéo</option><option value="article">Article</option><option value="doc">Documentation</option></select></div>
+    <div id="resErr" class="err-msg" hidden style="background:var(--red-soft);border:1px solid var(--red);color:var(--text-1);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" id="resSubmit" onclick="submitAddResource()">Ajouter</button>
+    </div>`);
+}
+async function submitAddResource(){
+  const title = document.getElementById('resTitle').value.trim();
+  const url = document.getElementById('resUrl').value.trim();
+  const resourceType = document.getElementById('resType').value;
+  const errEl = document.getElementById('resErr');
+  if (!title || !url){ errEl.textContent = "Le titre et l'URL sont requis."; errEl.hidden = false; return; }
+  if (typeof DB !== 'undefined' && DB.isConnected){
+    const session = await DB.getSession();
+    if (!session){ window.location.href = 'login.html'; return; }
+  }
+  const btn = document.getElementById('resSubmit');
+  btn.disabled = true; btn.textContent = 'Ajout...';
+  try{
+    const resource = await api.addWorldResource(WORLD_ID, { title, url, resourceType });
+    if (_worldResources === null) _worldResources = [];
+    _worldResources.unshift(resource);
+    closeModal();
+    showToast('Ressource ajoutée ✓', 'success');
+    const container = document.getElementById('worldTabContent');
+    if (container) container.innerHTML = worldResourcesTabHTML(_worldResources);
+  }catch(err){
+    errEl.textContent = err.message || "Impossible d'ajouter cette ressource.";
+    errEl.hidden = false;
+    btn.disabled = false; btn.textContent = 'Ajouter';
+  }
+}
+async function handleDeleteResource(resourceId){
+  if (!confirm('Supprimer cette ressource ?')) return;
+  try {
+    await api.deleteWorldResource(resourceId);
+    _worldResources = _worldResources.filter(r => String(r.id) !== String(resourceId));
+    const container = document.getElementById('worldTabContent');
+    if (container) container.innerHTML = worldResourcesTabHTML(_worldResources);
+    showToast('Ressource supprimée ✓', 'success');
+  } catch (err) {
+    showError(err);
+  }
+}
+window.openAddResourceModal = openAddResourceModal;
+window.submitAddResource = submitAddResource;
+window.handleDeleteResource = handleDeleteResource;
+
+/* Switch the active world tab and load its content on demand
+   (mirrors switchProfileTab in profile.html). Members/events/resources
+   are fetched once and cached in module vars, not refetched every click. */
+async function switchWorldTab(tabEl, tab){
+  document.querySelectorAll('#worldTabs .tab').forEach(t=>t.classList.remove('active'));
+  tabEl.classList.add('active');
+  const container = document.getElementById('worldTabContent');
+  if (!container) return;
+  if (tab === 'posts'){
+    container.innerHTML = worldPostsTabHTML(_worldPosts);
+    wireGlobalInteractions();
+    return;
+  }
+  container.innerHTML = `<div class="card-pad" style="text-align:center;color:var(--text-3)">Chargement...</div>`;
+  if (tab === 'members'){
+    if (_worldMembers === null){
+      try { _worldMembers = await api.getWorldMembers(WORLD_ID); } catch (err) { _worldMembers = []; console.warn('[WorldHub] getWorldMembers failed:', err.message); }
+    }
+    container.innerHTML = worldMembersTabHTML(_worldMembers);
+  } else if (tab === 'events'){
+    if (_worldEvents === null){
+      try { _worldEvents = await api.getEvents(WORLD_ID); } catch (err) { _worldEvents = []; console.warn('[WorldHub] getEvents failed:', err.message); }
+    }
+    container.innerHTML = worldEventsTabHTML(_worldEvents);
+  } else if (tab === 'resources'){
+    if (_worldResources === null){
+      try { _worldResources = await api.getWorldResources(WORLD_ID); } catch (err) { _worldResources = []; console.warn('[WorldHub] getWorldResources failed:', err.message); }
+    }
+    container.innerHTML = worldResourcesTabHTML(_worldResources);
+  }
+}
+window.switchWorldTab = switchWorldTab;
+
+function mainWorld(world){
   return `
   <div class="main-col">
     <div class="world-cover">
@@ -148,23 +324,13 @@ function mainWorld(world, posts){
       </div>
     </div>
     <div class="card">
-      <div class="tabs">
-        <div class="tab active">Publications</div>
-        <div class="tab">Membres</div>
-        <div class="tab">Événements</div>
-        <div class="tab">Ressources</div>
+      <div class="tabs" id="worldTabs">
+        <div class="tab active" data-tabkey="posts" onclick="switchWorldTab(this,'posts')">Publications</div>
+        <div class="tab" data-tabkey="members" onclick="switchWorldTab(this,'members')">Membres</div>
+        <div class="tab" data-tabkey="events" onclick="switchWorldTab(this,'events')">Événements</div>
+        <div class="tab" data-tabkey="resources" onclick="switchWorldTab(this,'resources')">Ressources</div>
       </div>
-      <div class="composer">
-        <div class="composer-top">
-          <img class="avatar" src="${MOCK.user.avatar}" style="width:38px;height:38px">
-          <div class="fake-input" onclick="location.href='create-post.html?world=${encodeURIComponent(WORLD_ID)}'">Quoi de neuf dans ${escapeHtml(world.name)} ?</div>
-        </div>
-        <div class="composer-actions">
-          <div class="chip blue" onclick="location.href='create-post.html?world=${encodeURIComponent(WORLD_ID)}'">🖼️ Image</div><div class="chip" onclick="location.href='create-post.html?world=${encodeURIComponent(WORLD_ID)}'">🎬 Vidéo</div><div class="chip green" onclick="location.href='create-post.html?world=${encodeURIComponent(WORLD_ID)}'">📊 Sondage</div>
-          <div class="spacer"></div><button class="btn btn-primary btn-sm" onclick="location.href='create-post.html?world=${encodeURIComponent(WORLD_ID)}'">Publier</button>
-        </div>
-      </div>
-      ${posts.length ? posts.map(worldPostCard).join('') : `<div class="card-pad" style="text-align:center;color:var(--text-3)">Aucune publication pour le moment dans ce monde.</div>`}
+      <div id="worldTabContent">${worldPostsTabHTML(_worldPosts)}</div>
     </div>
   </div>`;
 }
@@ -176,8 +342,14 @@ async function render(){
     api.isWorldMember(WORLD_ID),
   ]);
   _world = world;
+  _worldPosts = posts;
   _isMember = isMember;
-  initLayout({ active: WORLD_ID, mainHTML: mainWorld(world, posts), rail: worldRail(world) });
+  try {
+    const [role, profile] = await Promise.all([api.getWorldRole(WORLD_ID), api.getCurrentProfile()]);
+    _myRole = role;
+    _meId = profile?.id || null;
+  } catch (err) { console.warn('[WorldHub] role/profile hydration failed:', err.message); }
+  initLayout({ active: WORLD_ID, mainHTML: mainWorld(_world), rail: worldRail(_world) });
 }
 render();
 </script>
